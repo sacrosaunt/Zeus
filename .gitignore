@@ -1,0 +1,105 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+__pypackages__/
+
+# Python cache/compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging
+build/
+dist/
+downloads/
+.eggs/
+eggs/
+*.egg-info/
+*.egg
+wheels/
+share/python-wheels/
+pip-wheel-metadata/
+pip-log.txt
+pip-delete-this-directory.txt
+MANIFEST
+.installed.cfg
+
+# PyInstaller
+*.spec
+*.manifest
+
+# Tests and coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.junit/
+
+# Type checkers and linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Frameworks and tools
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask
+instance/
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Sphinx
+docs/_build/
+doc/_build/
+
+# PyBuilder
+target/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+profile_default/
+ipython_config.py
+
+# Cython
+cython_debug/
+
+# Editors and IDEs
+.vscode/
+.idea/
+
+# Secrets and configs
+.env
+.env.*
+*.pem
+*.key
