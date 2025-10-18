@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,8 +26,6 @@ class WorkerConfig:
     height: int
     width: int
     inference_steps: int
-    fake_inference: bool
-    fake_source: Path
 
 
 def _format_status(state: str, percent: int | None = None) -> str:
@@ -76,20 +73,6 @@ def load_config() -> WorkerConfig:
     if missing:
         raise RuntimeError(f"Missing required configuration values: {', '.join(missing)}")
 
-    fake_inference = os.environ.get("FAKE_INFERENCE", "1") != "0"
-    if fake_inference:
-        fake_source_raw = os.environ.get("FAKE_INFERENCE_SOURCE")
-        fake_source = Path(fake_source_raw).resolve() if fake_source_raw else (Path("test.mp4").resolve())
-        if not fake_source.exists():
-            raise RuntimeError(
-                f"Fake inference enabled but test video not found at {fake_source}"
-            )
-    else:
-        model_path = Path(model_id)
-        if not model_path.exists():
-            raise RuntimeError("LTX_MODEL_ID must point to an existing local model directory.")
-        fake_source = Path("test.mp4").resolve()
-
     def _int_config(key: str) -> int:
         raw = _get(key)
         try:
@@ -109,8 +92,6 @@ def load_config() -> WorkerConfig:
         height=_int_config("LTX_HEIGHT"),
         width=_int_config("LTX_WIDTH"),
         inference_steps=_int_config("LTX_INFERENCE_STEPS"),
-        fake_inference=fake_inference,
-        fake_source=fake_source,
     )
 
 
@@ -184,11 +165,7 @@ class InferenceWorker:
         self.config = config
         self.redis = Redis.from_url(config.redis_url, decode_responses=True)
         self.status_key = config.redis_status_key
-        self.fake_inference = config.fake_inference
-        self.fake_source = config.fake_source
-        self.model = None
-        if not self.fake_inference:
-            self.model = LTXVideoModel(config.model_id, config.device)
+        self.model = LTXVideoModel(config.model_id, config.device)
 
     def run(self) -> None:
         LOGGER.info("Starting inference worker listening on queue '%s'", self.config.redis_queue_key)
@@ -234,41 +211,28 @@ class InferenceWorker:
         try:
             self._set_status(job_id, "running", 0)
 
-            if self.fake_inference:
-                self._run_fake_inference(job_id, output_path)
-            else:
-                def progress_callback(step: int, timestep, latents) -> None:
-                    nonlocal last_percent
-                    percent = min(99, int(((step + 1) * 100) / total_steps))
-                    if percent != last_percent:
-                        last_percent = percent
-                        self._set_status(job_id, "running", percent)
+            def progress_callback(step: int, timestep, latents) -> None:
+                nonlocal last_percent
+                percent = min(99, int(((step + 1) * 100) / total_steps))
+                if percent != last_percent:
+                    last_percent = percent
+                    self._set_status(job_id, "running", percent)
 
-                frames = self.model.generate_frames(
-                    prompt,
-                    num_frames=self.config.frames,
-                    height=self.config.height,
-                    width=self.config.width,
-                    num_inference_steps=self.config.inference_steps,
-                    callback=progress_callback,
-                    callback_steps=1,
-                )
-                frames_to_video(frames, output_path, fps=self.config.fps)
+            frames = self.model.generate_frames(
+                prompt,
+                num_frames=self.config.frames,
+                height=self.config.height,
+                width=self.config.width,
+                num_inference_steps=self.config.inference_steps,
+                callback=progress_callback,
+                callback_steps=1,
+            )
+            frames_to_video(frames, output_path, fps=self.config.fps)
             self._set_status(job_id, "completed", 100)
             LOGGER.info("Job %s completed successfully.", job_id)
         except Exception as exc:
             self._set_status(job_id, "failed", min(100, last_percent))
             LOGGER.exception("Job %s failed during inference.", job_id)
-
-    def _run_fake_inference(self, job_id: str, output_path: Path) -> None:
-        """Simulate inference by copying a pre-rendered video."""
-        LOGGER.info("Running fake inference for job %s; using %s", job_id, self.fake_source)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        steps = [20, 50, 80]
-        for percent in steps:
-            time.sleep(0.1)
-            self._set_status(job_id, "running", percent)
-        shutil.copy2(self.fake_source, output_path)
 
 
 def main() -> None:

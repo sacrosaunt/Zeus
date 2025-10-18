@@ -43,8 +43,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--include-config",
+        dest="include_config",
         action="store_true",
-        help="Also download lightweight config/tokenizer files required for full inference.",
+        default=True,
+        help="Fetch lightweight config/tokenizer files required for full inference (default).",
+    )
+    parser.add_argument(
+        "--no-include-config",
+        dest="include_config",
+        action="store_false",
+        help="Skip downloading config/tokenizer assets.",
     )
     return parser.parse_args()
 
