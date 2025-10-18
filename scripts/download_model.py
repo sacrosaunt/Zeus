@@ -72,10 +72,13 @@ def main() -> int:
             local_dir=str(destination),
             token=args.token,
             allow_patterns=[
-                "*.json",
+                "model_index.json",
+                "scheduler/*",
+                "tokenizer/*",
+                "text_encoder/*",
+                "transformer/*",
+                "vae/*",
                 "*.txt",
-                "*.model",
-                "*.config",
                 "*.py",
             ],
         )

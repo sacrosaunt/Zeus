@@ -112,6 +112,7 @@ class LTXVideoModel:
         self.pipeline = DiffusionPipeline.from_pretrained(
             model_id,
             torch_dtype=dtype,
+            trust_remote_code=True,
         )
         self.pipeline = self.pipeline.to(device)
         self.device = device
@@ -136,14 +137,29 @@ class LTXVideoModel:
             height,
             num_inference_steps,
         )
+        if callback is not None:
+            step_interval = max(1, callback_steps or 1)
+
+            def _on_step_end(
+                _pipe, step: int, timestep, callback_kwargs: dict,
+            ) -> dict:
+                """Invoke legacy callback hook to report progress."""
+                if (step + 1) % step_interval == 0:
+                    try:
+                        callback(step, timestep, callback_kwargs.get("latents"))
+                    except Exception:  # pragma: no cover - defensive
+                        LOGGER.exception("Progress callback failed")
+                return callback_kwargs
+        else:
+            _on_step_end = None
+
         output = self.pipeline(
             prompt=prompt,
             num_frames=num_frames,
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
-            callback=callback,
-            callback_steps=callback_steps,
+            callback_on_step_end=_on_step_end,
         )
         return output.frames
 
