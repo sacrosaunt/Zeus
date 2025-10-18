@@ -81,6 +81,7 @@ instance/
 # Assets
 models/
 test.mp4
+generated/
 
 # Sphinx
 docs/_build/
