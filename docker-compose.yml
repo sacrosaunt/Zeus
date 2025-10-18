@@ -1,4 +1,10 @@
 services:
+  app-env: &app-env
+    REDIS_URL: redis://redis:6379/0
+    REDIS_QUEUE_KEY: jobs:queue
+    REDIS_STATUS_KEY: jobs:status
+    GENERATED_ROOT: /data/generated
+
   redis:
     image: redis:7-alpine
     ports:
@@ -9,10 +15,7 @@ services:
       context: .
       dockerfile: Dockerfile.app
     environment:
-      REDIS_URL: redis://redis:6379/0
-      REDIS_QUEUE_KEY: jobs:queue
-      REDIS_STATUS_KEY: jobs:status
-      GENERATED_ROOT: /data/generated
+      <<: *app-env
     volumes:
       - ./generated:/data/generated
     ports:
@@ -25,10 +28,7 @@ services:
       context: .
       dockerfile: Dockerfile.inference
     environment:
-      REDIS_URL: redis://redis:6379/0
-      REDIS_QUEUE_KEY: jobs:queue
-      REDIS_STATUS_KEY: jobs:status
-      GENERATED_ROOT: /data/generated
+      <<: *app-env
       LTX_MODEL_ID: /models/LTX-Video
       LTX_DEVICE: auto
       LTX_NUM_FRAMES: "121"
