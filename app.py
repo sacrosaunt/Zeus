@@ -47,7 +47,7 @@ def create_app() -> Flask:
             else:
                 downloading = model_downloading_path.exists() if model_downloading_path else False
                 message = (
-                    "Please wait for the model to finish downloading on the application servers. Generation will be available soon."
+                    "Please wait for the model to finish downloading to the application servers. Generation will be available soon."
                     if downloading
                     else "Model is not yet available."
                 )
