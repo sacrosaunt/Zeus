@@ -24,6 +24,12 @@ def create_app() -> Flask:
     redis_client = Redis.from_url(redis_url, decode_responses=True)
     generated_root = Path(generated_root_value).resolve()
 
+    def _format_status(state: str, percent: int | None = None) -> str:
+        if percent is None:
+            return state
+        bounded = max(0, min(100, percent))
+        return f"{state}:{bounded}"
+
     @app.post("/api/generate")
     def generate():
         """Start video inference job."""
@@ -35,11 +41,11 @@ def create_app() -> Flask:
         job_id = str(uuid.uuid4())
         job_descriptor = {"job_id": job_id, "prompt": prompt}
         with redis_client.pipeline() as pipe:
-            pipe.hset(redis_status_key, job_id, "queued")
+            pipe.hset(redis_status_key, job_id, _format_status("queued", 0))
             pipe.rpush(redis_queue_key, json.dumps(job_descriptor))
             pipe.execute()
 
-        return jsonify({"job_id": job_id, "status": "queued"}), 202
+        return jsonify({"job_id": job_id, "status": "queued", "percent_complete": 0}), 202
 
     @app.get("/api/jobs/<job_id>")
     def get_job_status(job_id: str):
@@ -48,7 +54,21 @@ def create_app() -> Flask:
         if status_raw is None:
             return jsonify({"error": "job_not_found", "job_id": job_id}), 404
 
-        return jsonify({"job_id": job_id, "status": status_raw}), 200
+        status = status_raw
+        percent = None
+        if ":" in status_raw:
+            state, maybe_percent = status_raw.split(":", 1)
+            status = state
+            try:
+                percent = int(maybe_percent)
+            except ValueError:
+                percent = None
+
+        response = {"job_id": job_id, "status": status}
+        if percent is not None:
+            response["percent_complete"] = percent
+
+        return jsonify(response), 200
 
     @app.get("/files/<job_id>/out.mp4")
     def get_job_output(job_id: str):

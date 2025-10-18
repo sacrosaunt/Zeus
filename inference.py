@@ -3,7 +3,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence
+from typing import Callable, List, Sequence
 
 import numpy as np
 from dotenv import dotenv_values
@@ -26,6 +26,13 @@ class WorkerConfig:
     height: int
     width: int
     inference_steps: int
+
+
+def _format_status(state: str, percent: int | None = None) -> str:
+    if percent is None:
+        return state
+    bounded = max(0, min(100, percent))
+    return f"{state}:{bounded}"
 
 
 def load_config() -> WorkerConfig:
@@ -114,6 +121,8 @@ class LTXVideoModel:
         height: int,
         width: int,
         num_inference_steps: int,
+        callback: Callable | None = None,
+        callback_steps: int = 1,
     ) -> Sequence:
         """Run the model and return a sequence of frames."""
         LOGGER.info(
@@ -130,6 +139,8 @@ class LTXVideoModel:
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
+            callback=callback,
+            callback_steps=callback_steps,
         )
         return output.frames
 
@@ -168,8 +179,8 @@ class InferenceWorker:
                 LOGGER.exception("Unhandled exception in worker loop; continuing in 5 seconds.")
                 time.sleep(5)
 
-    def _set_status(self, job_id: str, status: str) -> None:
-        self.redis.hset(self.status_key, job_id, status)
+    def _set_status(self, job_id: str, state: str, percent: int | None = None) -> None:
+        self.redis.hset(self.status_key, job_id, _format_status(state, percent))
 
     def _dequeue_job(self) -> dict | None:
         """Block on the Redis queue for the next job using BLPOP."""
@@ -192,20 +203,32 @@ class InferenceWorker:
         job_id = job["job_id"]
         prompt = job["prompt"]
         output_path = self.config.generated_root / job_id / "out.mp4"
+        last_percent = 0
+        total_steps = max(1, self.config.inference_steps)
         try:
-            self._set_status(job_id, "running")
+            self._set_status(job_id, "running", 0)
+
+            def progress_callback(step: int, timestep, latents) -> None:
+                nonlocal last_percent
+                percent = min(99, int(((step + 1) * 100) / total_steps))
+                if percent != last_percent:
+                    last_percent = percent
+                    self._set_status(job_id, "running", percent)
+
             frames = self.model.generate_frames(
                 prompt,
                 num_frames=self.config.frames,
                 height=self.config.height,
                 width=self.config.width,
                 num_inference_steps=self.config.inference_steps,
+                callback=progress_callback,
+                callback_steps=1,
             )
             frames_to_video(frames, output_path, fps=self.config.fps)
-            self._set_status(job_id, "completed")
+            self._set_status(job_id, "completed", 100)
             LOGGER.info("Job %s completed successfully.", job_id)
         except Exception as exc:
-            self._set_status(job_id, "failed")
+            self._set_status(job_id, "failed", min(100, last_percent))
             LOGGER.exception("Job %s failed during inference.", job_id)
 
 
