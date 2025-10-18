@@ -98,6 +98,17 @@
         cursor: wait;
       }
 
+      .model-status-message {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #ffb347;
+        display: none;
+      }
+
+      .model-status-message.visible {
+        display: block;
+      }
+
       .status {
         margin-top: 2rem;
         display: none;
@@ -298,6 +309,7 @@
             <textarea id="prompt" name="prompt" placeholder="A cinematic drone shot over neon-lit mountains at dusk"></textarea>
           </label>
           <button type="submit">Generate</button>
+          <p id="model-status-message" class="model-status-message" role="status" aria-live="polite"></p>
         </form>
 
         <section id="status" class="status" aria-live="polite">
@@ -315,8 +327,8 @@
         </section>
       </main>
 
-      <aside class="history" aria-label="Past videos">
-        <h2>Past Videos</h2>
+      <aside class="history" aria-label="Past generations">
+        <h2>Past Generations</h2>
         <p id="history-empty" class="history-empty">No saved videos yet. Generate one to build your library.</p>
         <ul id="history-list" class="history-list" aria-live="polite"></ul>
       </aside>
@@ -335,6 +347,7 @@
       const downloadBtn = document.getElementById("download-btn");
       const historyList = document.getElementById("history-list");
       const historyEmptyState = document.getElementById("history-empty");
+      const modelStatusMessage = document.getElementById("model-status-message");
       const HISTORY_STORAGE_KEY = "zeus-history";
       const HISTORY_VIDEO_KEY = "zeus-history-videos";
       const DB_NAME = "zeus-video-cache";
@@ -348,8 +361,11 @@
       let cachedVideoIds = new Set();
       let dbPromise = null;
       let currentJobId = null;
+      let modelReady = false;
+      let modelStatusTimer = null;
 
       initializeHistory();
+      startModelStatusWatcher();
 
       if (historyList) {
         historyList.addEventListener("click", (event) => {
@@ -380,10 +396,15 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (!modelReady) {
+          statusSection.classList.add("visible");
+          updateStatus("Model is downloading. Please wait before generating.", null, true);
+          return;
+        }
+
         clearPoll();
         clearActiveVideo();
         statusSection.classList.add("visible");
-        updateStatus("queued", 0);
 
         const prompt = promptInput.value.trim();
         if (!prompt) {
@@ -391,6 +412,7 @@
           return;
         }
         lastSubmittedPrompt = prompt;
+        updateStatus("queued", 0);
 
         setLoading(true);
 
@@ -417,7 +439,7 @@
       });
 
       function setLoading(isLoading) {
-        button.disabled = isLoading;
+        button.disabled = isLoading || !modelReady;
         promptInput.disabled = isLoading;
       }
 
@@ -499,6 +521,56 @@
         }
       }
 
+      function startModelStatusWatcher() {
+        refreshModelStatus();
+        if (modelStatusTimer) {
+          window.clearInterval(modelStatusTimer);
+        }
+        modelStatusTimer = window.setInterval(refreshModelStatus, 8000);
+      }
+
+      async function refreshModelStatus() {
+        try {
+          const res = await fetch("/api/model-status");
+          if (!res.ok) {
+            throw new Error(`Status request failed (${res.status})`);
+          }
+          const data = await safeJson(res) ?? {};
+          updateModelReadyState(data);
+          if (data.ready && modelStatusTimer) {
+            window.clearInterval(modelStatusTimer);
+            modelStatusTimer = null;
+          }
+        } catch (err) {
+          updateModelReadyState({ ready: false, message: err.message || "Model status unavailable." });
+        }
+      }
+
+      function updateModelReadyState(status) {
+        modelReady = status?.ready === true;
+        const message = status?.message || (modelReady ? "" : "Model is unavailable.");
+
+        if (modelStatusMessage) {
+          if (modelReady) {
+            modelStatusMessage.textContent = "";
+            modelStatusMessage.classList.remove("visible");
+          } else {
+            modelStatusMessage.textContent = message;
+            modelStatusMessage.classList.add("visible");
+          }
+        }
+
+        if (button) {
+          button.title = modelReady ? "" : message;
+        }
+
+        if (!button.disabled || modelReady) {
+          setLoading(false);
+        } else {
+          button.disabled = true;
+        }
+      }
+
       function initializeHistory() {
         historyEntries = loadStoredHistory();
         cachedVideoIds = loadStoredVideoIds();
@@ -542,6 +614,7 @@
         ].slice(0, 10);
 
         saveHistory();
+        pruneCachedVideos();
         renderHistory();
       }
 
@@ -576,28 +649,28 @@
             item.appendChild(meta);
           }
 
-        const action = document.createElement("button");
-        action.type = "button";
-        action.className = "history-play";
-        action.dataset.jobId = entry.jobId;
-        action.dataset.prompt = entry.prompt;
-        action.textContent = "Replay";
-        item.appendChild(action);
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "history-play";
+          action.dataset.jobId = entry.jobId;
+          action.dataset.prompt = entry.prompt;
+          action.textContent = "Replay";
+          item.appendChild(action);
 
-        if (hasCachedVideo(entry.jobId)) {
-          const download = document.createElement("button");
-          download.type = "button";
-          download.className = "history-play";
-          download.dataset.jobId = entry.jobId;
-          download.dataset.prompt = entry.prompt;
-          download.dataset.action = "download";
-          download.textContent = "Download";
-          item.appendChild(download);
-        }
+          if (hasCachedVideo(entry.jobId)) {
+            const download = document.createElement("button");
+            download.type = "button";
+            download.className = "history-play";
+            download.dataset.jobId = entry.jobId;
+            download.dataset.prompt = entry.prompt;
+            download.dataset.action = "download";
+            download.textContent = "Download";
+            item.appendChild(download);
+          }
 
-        historyList.appendChild(item);
-      });
-    }
+          historyList.appendChild(item);
+        });
+      }
 
     async function fetchVideo(jobId) {
       const res = await fetch(`/files/${jobId}/out.mp4`);
@@ -631,6 +704,26 @@
       }
 
       return url;
+    }
+
+    function pruneCachedVideos() {
+      const validIds = new Set(historyEntries.map((entry) => entry.jobId));
+
+      videoCache.forEach((value, key) => {
+        if (!validIds.has(key)) {
+          if (value?.url) {
+            try {
+              URL.revokeObjectURL(value.url);
+            } catch {
+              // ignore
+            }
+          }
+          videoCache.delete(key);
+        }
+      });
+
+      cachedVideoIds = new Set(Array.from(cachedVideoIds).filter((id) => validIds.has(id)));
+      saveStoredVideoIds();
     }
 
     function setActiveVideo(jobId, url) {
@@ -781,40 +874,40 @@
       });
     }
 
-     function loadStoredHistory() {
-        if (!("localStorage" in window)) {
-          return [];
-        }
-
-        try {
-          const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
-          if (!raw) {
-            return [];
-          }
-
-          const parsed = JSON.parse(raw);
-          if (!Array.isArray(parsed)) {
-            return [];
-          }
-
-          return parsed
-            .filter(
-              (entry) =>
-                entry &&
-                typeof entry === "object" &&
-                typeof entry.jobId === "string" &&
-                entry.jobId.length > 0 &&
-                typeof entry.prompt === "string"
-            )
-            .map((entry) => ({
-              jobId: entry.jobId,
-              prompt: entry.prompt,
-              createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
-            }));
-        } catch {
-          return [];
-        }
+    function loadStoredHistory() {
+      if (!("localStorage" in window)) {
+        return [];
       }
+
+      try {
+        const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+        if (!raw) {
+          return [];
+        }
+
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          return [];
+        }
+
+        return parsed
+          .filter(
+            (entry) =>
+              entry &&
+              typeof entry === "object" &&
+              typeof entry.jobId === "string" &&
+              entry.jobId.length > 0 &&
+              typeof entry.prompt === "string"
+          )
+          .map((entry) => ({
+            jobId: entry.jobId,
+            prompt: entry.prompt,
+            createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
+          }));
+      } catch {
+        return [];
+      }
+    }
 
       function saveHistory() {
         if (!("localStorage" in window)) {
@@ -855,6 +948,9 @@
       window.addEventListener("beforeunload", () => {
         if (activeJobId) {
           clearPoll();
+        }
+        if (modelStatusTimer) {
+          window.clearInterval(modelStatusTimer);
         }
       });
     </script>

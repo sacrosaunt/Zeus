@@ -14,6 +14,8 @@ def create_app() -> Flask:
     redis_queue_key = os.environ.get("REDIS_QUEUE_KEY")
     redis_status_key = os.environ.get("REDIS_STATUS_KEY")
     generated_root_value = os.environ.get("GENERATED_ROOT")
+    model_ready_value = os.environ.get("MODEL_READY_FILE")
+    model_downloading_value = os.environ.get("MODEL_DOWNLOADING_FILE")
 
     if not redis_url or not redis_queue_key or not redis_status_key or not generated_root_value:
         raise RuntimeError(
@@ -22,6 +24,8 @@ def create_app() -> Flask:
 
     redis_client = Redis.from_url(redis_url, decode_responses=True)
     generated_root = Path(generated_root_value).resolve()
+    model_ready_path = Path(model_ready_value).resolve() if model_ready_value else None
+    model_downloading_path = Path(model_downloading_value).resolve() if model_downloading_value else None
 
     def _format_status(state: str, percent: int | None = None) -> str:
         if percent is None:
@@ -29,10 +33,36 @@ def create_app() -> Flask:
         bounded = max(0, min(100, percent))
         return f"{state}:{bounded}"
 
+    def _model_status() -> dict[str, object]:
+        ready = True
+        downloading = False
+        message = ""
+
+        if model_ready_path is not None:
+            ready = model_ready_path.exists()
+            if ready:
+                message = "Model ready"
+            else:
+                downloading = model_downloading_path.exists() if model_downloading_path else False
+                message = (
+                    "Please wait for the model to finish downloading on the application servers. Generation will be available soon."
+                    if downloading
+                    else "Model is not yet available."
+                )
+        else:
+            message = "Model status not tracked."
+
+        return {"ready": ready, "downloading": downloading, "message": message}
+
     @app.get("/")
     def index():
         """Serve frontend."""
         return render_template("index.html")
+
+    @app.get("/api/model-status")
+    def get_model_status():
+        """Report whether the inference model is ready for use."""
+        return jsonify(_model_status()), 200
 
     @app.post("/api/generate")
     def generate():
@@ -41,6 +71,13 @@ def create_app() -> Flask:
         prompt = payload.get("prompt")
         if not prompt:
             return jsonify({"error": "prompt is required"}), 400
+
+        status = _model_status()
+        if not status.get("ready", False):
+            return (
+                jsonify({"error": "model_not_ready", "message": status.get("message")}),
+                503,
+            )
 
         job_id = str(uuid.uuid4())
         job_descriptor = {"job_id": job_id, "prompt": prompt}
