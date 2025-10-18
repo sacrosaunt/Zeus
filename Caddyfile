@@ -2,6 +2,7 @@
     reverse_proxy {
         to app1:5000
         to app2:5000
+        to app3:5000
         lb_policy least_conn
     }
 }

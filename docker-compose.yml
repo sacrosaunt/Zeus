@@ -33,6 +33,12 @@ services:
       <<: *app-env
       APP_INSTANCE: app2
 
+  app3:
+    <<: *app-service
+    environment:
+      <<: *app-env
+      APP_INSTANCE: app3
+
   inference:
     build:
       context: .
@@ -64,3 +70,4 @@ services:
     depends_on:
       - app1
       - app2
+      - app3
