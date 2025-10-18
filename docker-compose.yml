@@ -18,6 +18,7 @@ services:
       dockerfile: Dockerfile.app
     environment:
       <<: *app-env
+      APP_INSTANCE: app1
     volumes:
       - ./generated:/data/generated
       - ./models:/models:ro
@@ -28,6 +29,9 @@ services:
 
   app2:
     <<: *app-service
+    environment:
+      <<: *app-env
+      APP_INSTANCE: app2
 
   inference:
     build:

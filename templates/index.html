@@ -356,6 +356,7 @@
       let pollTimer = null;
       let activeJobId = null;
       let lastSubmittedPrompt = "";
+      let lastHandledBy = "";
       let historyEntries = [];
       let videoCache = new Map();
       let cachedVideoIds = new Set();
@@ -363,6 +364,7 @@
       let currentJobId = null;
       let modelReady = false;
       let modelStatusTimer = null;
+      const jobMeta = new Map();
 
       initializeHistory();
       startModelStatusWatcher();
@@ -428,9 +430,12 @@
             throw new Error(payload?.error ?? `Request failed (${res.status})`);
           }
 
-          const { job_id: jobId } = await res.json();
+          const { job_id: jobId, handled_by: handledBy } = await res.json();
           activeJobId = jobId;
-          updateStatus("queued", 0);
+          const handler = handledBy || "unknown";
+          jobMeta.set(jobId, { handledBy: handler });
+          lastHandledBy = handler;
+          updateStatus(`queued • served by ${handler}`, 0);
           pollTimer = window.setInterval(() => pollStatus(jobId), 1500);
         } catch (err) {
           updateStatus(err.message || "Failed to start generation.", null, true);
@@ -467,16 +472,21 @@
           }
 
           const { status, percent_complete: percent } = await res.json();
-          updateStatus(status, percent ?? null);
 
           if (status === "completed") {
-            await loadVideo(jobId);
-            registerHistory(jobId, lastSubmittedPrompt);
+            const handler = jobMeta.get(jobId)?.handledBy || lastHandledBy || "";
+            const statusMessage = handler && handler !== "unknown" ? `completed • served by ${handler}` : "completed";
+            await loadVideo(jobId, { statusMessage });
+            registerHistory(jobId, lastSubmittedPrompt, handler);
             clearPoll();
             setLoading(false);
+            jobMeta.delete(jobId);
           } else if (status === "failed") {
             clearPoll();
             setLoading(false);
+          }
+          if (status !== "completed") {
+            updateStatus(status, percent ?? null);
           }
         } catch (err) {
           clearPoll();
@@ -485,7 +495,7 @@
         }
       }
 
-      async function loadVideo(jobId, { fromCache = false } = {}) {
+      async function loadVideo(jobId, { fromCache = false, statusMessage = null } = {}) {
         try {
           let entry = videoCache.get(jobId);
           let blobUrl = entry?.url;
@@ -508,7 +518,7 @@
           }
 
           setActiveVideo(jobId, blobUrl);
-          updateStatus("completed", 100);
+          updateStatus(statusMessage || "completed", 100);
         } catch (err) {
           updateStatus(err.message || "Failed to load generated video.", null, true);
         }
@@ -593,23 +603,33 @@
 
         clearActiveVideo();
         setLoading(true);
-        loadVideo(jobId, { fromCache: true }).finally(() => {
+        const entry = historyEntries.find((item) => item.jobId === jobId);
+        const handler = entry?.handledBy || "";
+        const statusMessage = handler ? `completed • served by ${handler}` : "completed";
+        loadVideo(jobId, {
+          fromCache: true,
+          statusMessage,
+        }).finally(() => {
           setLoading(false);
         });
       }
 
-      function registerHistory(jobId, prompt) {
+      function registerHistory(jobId, prompt, handledBy) {
         if (!jobId || !prompt) {
           return;
         }
 
         const deduped = historyEntries.filter((entry) => entry.jobId !== jobId);
+        const entry = {
+          jobId,
+          prompt,
+          createdAt: Date.now(),
+        };
+        if (handledBy && handledBy !== "unknown") {
+          entry.handledBy = handledBy;
+        }
         historyEntries = [
-          {
-            jobId,
-            prompt,
-            createdAt: Date.now(),
-          },
+          entry,
           ...deduped,
         ].slice(0, 10);
 
@@ -642,10 +662,17 @@
           item.appendChild(promptEl);
 
           const timestamp = formatTimestamp(entry.createdAt);
+          const details = [];
           if (timestamp) {
+            details.push(timestamp);
+          }
+          if (entry.handledBy && entry.handledBy !== "unknown") {
+            details.push(`Served by ${entry.handledBy}`);
+          }
+          if (details.length > 0) {
             const meta = document.createElement("div");
             meta.className = "history-meta";
-            meta.textContent = timestamp;
+            meta.textContent = details.join(" • ");
             item.appendChild(meta);
           }
 
@@ -899,11 +926,23 @@
               entry.jobId.length > 0 &&
               typeof entry.prompt === "string"
           )
-          .map((entry) => ({
-            jobId: entry.jobId,
-            prompt: entry.prompt,
-            createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
-          }));
+          .map((entry) => {
+            const base = {
+              jobId: entry.jobId,
+              prompt: entry.prompt,
+              createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
+            };
+            const handledBy =
+              typeof entry.handledBy === "string"
+                ? entry.handledBy
+                : typeof entry.handled_by === "string"
+                ? entry.handled_by
+                : undefined;
+            if (handledBy && handledBy !== "unknown") {
+              base.handledBy = handledBy;
+            }
+            return base;
+          });
       } catch {
         return [];
       }

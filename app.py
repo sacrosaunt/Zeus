@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import uuid
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def create_app() -> Flask:
     generated_root = Path(generated_root_value).resolve()
     model_ready_path = Path(model_ready_value).resolve() if model_ready_value else None
     model_downloading_path = Path(model_downloading_value).resolve() if model_downloading_value else None
+    app_instance = os.environ.get("APP_INSTANCE") or socket.gethostname()
 
     def _format_status(state: str, percent: int | None = None) -> str:
         if percent is None:
@@ -86,7 +88,17 @@ def create_app() -> Flask:
             pipe.rpush(redis_queue_key, json.dumps(job_descriptor))
             pipe.execute()
 
-        return jsonify({"job_id": job_id, "status": "queued", "percent_complete": 0}), 202
+        return (
+            jsonify(
+                {
+                    "job_id": job_id,
+                    "status": "queued",
+                    "percent_complete": 0,
+                    "handled_by": app_instance,
+                }
+            ),
+            202,
+        )
 
     @app.get("/api/jobs/<job_id>")
     def get_job_status(job_id: str):
