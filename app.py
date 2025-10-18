@@ -15,8 +15,8 @@ def create_app() -> Flask:
     redis_queue_key = os.environ.get("REDIS_QUEUE_KEY")
     redis_status_key = os.environ.get("REDIS_STATUS_KEY")
     generated_root_value = os.environ.get("GENERATED_ROOT")
-    model_ready_value = os.environ.get("MODEL_READY_FILE")
-    model_downloading_value = os.environ.get("MODEL_DOWNLOADING_FILE")
+    server_ready_value = os.environ.get("SERVER_READY_FILE") or os.environ.get("MODEL_READY_FILE")
+    server_building_value = os.environ.get("SERVER_BUILDING_FILE") or os.environ.get("MODEL_DOWNLOADING_FILE")
 
     if not redis_url or not redis_queue_key or not redis_status_key or not generated_root_value:
         raise RuntimeError(
@@ -25,8 +25,8 @@ def create_app() -> Flask:
 
     redis_client = Redis.from_url(redis_url, decode_responses=True)
     generated_root = Path(generated_root_value).resolve()
-    model_ready_path = Path(model_ready_value).resolve() if model_ready_value else None
-    model_downloading_path = Path(model_downloading_value).resolve() if model_downloading_value else None
+    server_ready_path = Path(server_ready_value).resolve() if server_ready_value else None
+    server_building_path = Path(server_building_value).resolve() if server_building_value else None
     app_instance = os.environ.get("APP_INSTANCE") or socket.gethostname()
     job_metadata_key = f"{redis_status_key}:metadata"
 
@@ -36,26 +36,26 @@ def create_app() -> Flask:
         bounded = max(0, min(100, percent))
         return f"{state}:{bounded}"
 
-    def _model_status() -> dict[str, object]:
+    def _server_status() -> dict[str, object]:
         ready = True
-        downloading = False
+        building = False
         message = ""
 
-        if model_ready_path is not None:
-            ready = model_ready_path.exists()
+        if server_ready_path is not None:
+            ready = server_ready_path.exists()
             if ready:
-                message = "Model ready"
+                message = "Server ready"
             else:
-                downloading = model_downloading_path.exists() if model_downloading_path else False
+                building = server_building_path.exists() if server_building_path else False
                 message = (
-                    "Please wait for the model to finish downloading to the application servers. Generation will be available soon."
-                    if downloading
-                    else "Model is not yet available."
+                    "Server is currently building. Generation will be available once preparation completes."
+                    if building
+                    else "Server is not yet ready."
                 )
         else:
-            message = "Model status not tracked."
+            message = "Server status not tracked."
 
-        return {"ready": ready, "downloading": downloading, "message": message}
+        return {"ready": ready, "building": building, "message": message}
 
     @app.get("/")
     def index():
@@ -64,8 +64,8 @@ def create_app() -> Flask:
 
     @app.get("/api/model-status")
     def get_model_status():
-        """Report whether the inference model is ready for use."""
-        return jsonify(_model_status()), 200
+        """Report whether the inference server is ready for use."""
+        return jsonify(_server_status()), 200
 
     @app.post("/api/generate")
     def generate():
@@ -75,7 +75,7 @@ def create_app() -> Flask:
         if not prompt:
             return jsonify({"error": "prompt is required"}), 400
 
-        status = _model_status()
+        status = _server_status()
         if not status.get("ready", False):
             return (
                 jsonify({"error": "model_not_ready", "message": status.get("message")}),

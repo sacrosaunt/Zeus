@@ -3,8 +3,8 @@ x-app-env: &app-env
   REDIS_QUEUE_KEY: jobs:queue
   REDIS_STATUS_KEY: jobs:status
   GENERATED_ROOT: /data/generated
-  MODEL_READY_FILE: /models/.model_ready
-  MODEL_DOWNLOADING_FILE: /models/.model_downloading
+  SERVER_READY_FILE: /models/.server_ready
+  SERVER_BUILDING_FILE: /models/.server_building
 
 services:
   redis:

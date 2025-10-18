@@ -347,7 +347,7 @@
       const downloadBtn = document.getElementById("download-btn");
       const historyList = document.getElementById("history-list");
       const historyEmptyState = document.getElementById("history-empty");
-      const modelStatusMessage = document.getElementById("model-status-message");
+      const serverStatusMessage = document.getElementById("model-status-message");
       const HISTORY_STORAGE_KEY = "zeus-history";
       const HISTORY_VIDEO_KEY = "zeus-history-videos";
       const DB_NAME = "zeus-video-cache";
@@ -362,12 +362,12 @@
       let cachedVideoIds = new Set();
       let dbPromise = null;
       let currentJobId = null;
-      let modelReady = false;
-      let modelStatusTimer = null;
+      let serverReady = false;
+      let serverStatusTimer = null;
       const jobMeta = new Map();
 
       initializeHistory();
-      startModelStatusWatcher();
+      startServerStatusWatcher();
 
       if (historyList) {
         historyList.addEventListener("click", (event) => {
@@ -398,9 +398,9 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!modelReady) {
+        if (!serverReady) {
           statusSection.classList.add("visible");
-          updateStatus("Model is downloading. Please wait before generating.", null, true);
+          updateStatus("Server is building. Please wait before generating.", null, true);
           return;
         }
 
@@ -444,7 +444,7 @@
       });
 
       function setLoading(isLoading) {
-        button.disabled = isLoading || !modelReady;
+        button.disabled = isLoading || !serverReady;
         promptInput.disabled = isLoading;
       }
 
@@ -531,50 +531,50 @@
         }
       }
 
-      function startModelStatusWatcher() {
-        refreshModelStatus();
-        if (modelStatusTimer) {
-          window.clearInterval(modelStatusTimer);
+      function startServerStatusWatcher() {
+        refreshServerStatus();
+        if (serverStatusTimer) {
+          window.clearInterval(serverStatusTimer);
         }
-        modelStatusTimer = window.setInterval(refreshModelStatus, 8000);
+        serverStatusTimer = window.setInterval(refreshServerStatus, 8000);
       }
 
-      async function refreshModelStatus() {
+      async function refreshServerStatus() {
         try {
           const res = await fetch("/api/model-status");
           if (!res.ok) {
             throw new Error(`Status request failed (${res.status})`);
           }
           const data = await safeJson(res) ?? {};
-          updateModelReadyState(data);
-          if (data.ready && modelStatusTimer) {
-            window.clearInterval(modelStatusTimer);
-            modelStatusTimer = null;
+          updateServerReadyState(data);
+          if (data.ready && serverStatusTimer) {
+            window.clearInterval(serverStatusTimer);
+            serverStatusTimer = null;
           }
         } catch (err) {
-          updateModelReadyState({ ready: false, message: err.message || "Model status unavailable." });
+          updateServerReadyState({ ready: false, message: err.message || "Server status unavailable." });
         }
       }
 
-      function updateModelReadyState(status) {
-        modelReady = status?.ready === true;
-        const message = status?.message || (modelReady ? "" : "Model is unavailable.");
+      function updateServerReadyState(status) {
+        serverReady = status?.ready === true;
+        const message = status?.message || (serverReady ? "" : "Server is unavailable.");
 
-        if (modelStatusMessage) {
-          if (modelReady) {
-            modelStatusMessage.textContent = "";
-            modelStatusMessage.classList.remove("visible");
+        if (serverStatusMessage) {
+          if (serverReady) {
+            serverStatusMessage.textContent = "";
+            serverStatusMessage.classList.remove("visible");
           } else {
-            modelStatusMessage.textContent = message;
-            modelStatusMessage.classList.add("visible");
+            serverStatusMessage.textContent = message;
+            serverStatusMessage.classList.add("visible");
           }
         }
 
         if (button) {
-          button.title = modelReady ? "" : message;
+          button.title = serverReady ? "" : message;
         }
 
-        if (!button.disabled || modelReady) {
+        if (!button.disabled || serverReady) {
           setLoading(false);
         } else {
           button.disabled = true;
@@ -988,8 +988,8 @@
         if (activeJobId) {
           clearPoll();
         }
-        if (modelStatusTimer) {
-          window.clearInterval(modelStatusTimer);
+        if (serverStatusTimer) {
+          window.clearInterval(serverStatusTimer);
         }
       });
     </script>
