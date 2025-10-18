@@ -1,0 +1,42 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_QUEUE_KEY: jobs:queue
+      REDIS_STATUS_KEY: jobs:status
+      GENERATED_ROOT: /data/generated
+    volumes:
+      - ./generated:/data/generated
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis
+
+  inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_QUEUE_KEY: jobs:queue
+      REDIS_STATUS_KEY: jobs:status
+      GENERATED_ROOT: /data/generated
+      LTX_MODEL_ID: Lightricks/LTX-Video
+      LTX_DEVICE: auto
+      LTX_NUM_FRAMES: "121"
+      LTX_OUTPUT_FPS: "24"
+      LTX_HEIGHT: "512"
+      LTX_WIDTH: "768"
+      LTX_INFERENCE_STEPS: "40"
+    volumes:
+      - ./generated:/data/generated
+    depends_on:
+      - redis

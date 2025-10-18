@@ -1,12 +1,12 @@
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Sequence
 
 import numpy as np
-from dotenv import dotenv_values
 from redis import Redis
 
 LOGGER = logging.getLogger(__name__)
@@ -36,14 +36,17 @@ def _format_status(state: str, percent: int | None = None) -> str:
 
 
 def load_config() -> WorkerConfig:
-    """Load worker configuration from the .env file."""
-    config = dotenv_values(".env")
-    redis_url = config.get("REDIS_URL")
-    redis_queue_key = config.get("REDIS_QUEUE_KEY")
-    redis_status_key = config.get("REDIS_STATUS_KEY")
-    generated_root_value = config.get("GENERATED_ROOT")
-    model_id = config.get("LTX_MODEL_ID")
-    device = config.get("LTX_DEVICE")
+    """Load worker configuration from environment variables."""
+
+    def _get(key: str) -> str | None:
+        return os.environ.get(key)
+
+    redis_url = _get("REDIS_URL")
+    redis_queue_key = _get("REDIS_QUEUE_KEY")
+    redis_status_key = _get("REDIS_STATUS_KEY")
+    generated_root_value = _get("GENERATED_ROOT")
+    model_id = _get("LTX_MODEL_ID")
+    device = _get("LTX_DEVICE")
 
     missing = [
         key
@@ -65,13 +68,13 @@ def load_config() -> WorkerConfig:
         "LTX_WIDTH",
         "LTX_INFERENCE_STEPS",
     ]
-    missing.extend(key for key in int_keys if config.get(key) is None)
+    missing.extend(key for key in int_keys if _get(key) is None)
 
     if missing:
         raise RuntimeError(f"Missing required configuration values: {', '.join(missing)}")
 
     def _int_config(key: str) -> int:
-        raw = config.get(key)
+        raw = _get(key)
         try:
             return int(raw)
         except ValueError as exc:

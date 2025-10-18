@@ -1,20 +1,19 @@
 import json
+import os
 import uuid
 from pathlib import Path
 
-from dotenv import dotenv_values
 from flask import Flask, jsonify, render_template, request, send_file
 from redis import Redis
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    config = dotenv_values(".env")
 
-    redis_url = config.get("REDIS_URL")
-    redis_queue_key = config.get("REDIS_QUEUE_KEY")
-    redis_status_key = config.get("REDIS_STATUS_KEY")
-    generated_root_value = config.get("GENERATED_ROOT")
+    redis_url = os.environ.get("REDIS_URL")
+    redis_queue_key = os.environ.get("REDIS_QUEUE_KEY")
+    redis_status_key = os.environ.get("REDIS_STATUS_KEY")
+    generated_root_value = os.environ.get("GENERATED_ROOT")
 
     if not redis_url or not redis_queue_key or not redis_status_key or not generated_root_value:
         raise RuntimeError(
