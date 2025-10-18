@@ -46,16 +46,25 @@ services:
     environment:
       <<: *app-env
       LTX_MODEL_ID: /models/LTX-Video
-      LTX_DEVICE: auto
+      LTX_DEVICE: cuda
       LTX_NUM_FRAMES: "121"
       LTX_OUTPUT_FPS: "24"
       LTX_HEIGHT: "512"
       LTX_WIDTH: "768"
       LTX_INFERENCE_STEPS: "40"
       HF_HOME: /models/hf-cache
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
       - ./generated:/data/generated
       - ./models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     depends_on:
       - redis
 
