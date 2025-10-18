@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 
 from dotenv import dotenv_values
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file
 from redis import Redis
 
 
@@ -29,6 +29,11 @@ def create_app() -> Flask:
             return state
         bounded = max(0, min(100, percent))
         return f"{state}:{bounded}"
+
+    @app.get("/")
+    def index():
+        """Serve frontend."""
+        return render_template("index.html")
 
     @app.post("/api/generate")
     def generate():
