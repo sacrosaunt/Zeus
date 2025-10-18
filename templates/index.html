@@ -124,17 +124,22 @@
         transition: width 180ms ease;
       }
 
-      video {
+      .player {
         margin-top: 1.5rem;
+        display: none;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .player.visible {
+        display: flex;
+      }
+
+      .player video {
         width: 100%;
         max-height: 360px;
         border-radius: 16px;
         background: #000;
-        display: none;
-      }
-
-      video.visible {
-        display: block;
       }
 
       .error {
@@ -198,6 +203,18 @@
         color: rgba(255, 255, 255, 0.5);
       }
 
+      .player-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .primary,
+      .history-play,
+      .secondary {
+        cursor: pointer;
+      }
+
       .history-play {
         align-self: flex-start;
         padding: 0.45rem 0.9rem;
@@ -214,6 +231,25 @@
       .history-play:focus-visible {
         background: rgba(91, 140, 255, 0.3);
         transform: translateY(-1px);
+      }
+
+      .secondary {
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.08);
+        color: inherit;
+      }
+
+      .secondary:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .secondary:hover,
+      .secondary:focus-visible {
+        background: rgba(255, 255, 255, 0.12);
       }
 
       @media (min-width: 920px) {
@@ -271,7 +307,12 @@
           </div>
         </section>
 
-        <video id="result-video" controls playsinline></video>
+        <section id="player" class="player">
+          <video id="result-video" controls playsinline></video>
+          <div class="player-actions">
+            <button id="download-btn" class="secondary" type="button" disabled>Download</button>
+          </div>
+        </section>
       </main>
 
       <aside class="history" aria-label="Past videos">
@@ -289,15 +330,24 @@
       const statusText = document.getElementById("status-text");
       const progressFill = document.getElementById("progress-fill");
       const progressBar = statusSection.querySelector(".progress-bar");
+      const player = document.getElementById("player");
       const resultVideo = document.getElementById("result-video");
+      const downloadBtn = document.getElementById("download-btn");
       const historyList = document.getElementById("history-list");
       const historyEmptyState = document.getElementById("history-empty");
       const HISTORY_STORAGE_KEY = "zeus-history";
+      const HISTORY_VIDEO_KEY = "zeus-history-videos";
+      const DB_NAME = "zeus-video-cache";
+      const DB_STORE = "videos";
 
       let pollTimer = null;
       let activeJobId = null;
       let lastSubmittedPrompt = "";
       let historyEntries = [];
+      let videoCache = new Map();
+      let cachedVideoIds = new Set();
+      let dbPromise = null;
+      let currentJobId = null;
 
       initializeHistory();
 
@@ -310,15 +360,28 @@
 
           const { jobId = "" } = trigger.dataset;
           const prompt = trigger.dataset.prompt ?? "";
-          handleHistoryReplay(jobId, prompt);
+          if (trigger.dataset.action === "download") {
+            downloadCachedVideo(jobId);
+          } else {
+            handleHistoryReplay(jobId, prompt);
+          }
+        });
+      }
+
+      if (downloadBtn) {
+        downloadBtn.addEventListener("click", () => {
+          const jobId = downloadBtn.dataset.jobId || currentJobId;
+          if (!jobId) {
+            return;
+          }
+          downloadCachedVideo(jobId);
         });
       }
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         clearPoll();
-        resultVideo.classList.remove("visible");
-        resultVideo.removeAttribute("src");
+        clearActiveVideo();
         statusSection.classList.add("visible");
         updateStatus("queued", 0);
 
@@ -400,18 +463,29 @@
         }
       }
 
-      async function loadVideo(jobId) {
+      async function loadVideo(jobId, { fromCache = false } = {}) {
         try {
-          const res = await fetch(`/files/${jobId}/out.mp4`);
-          if (!res.ok) {
-            throw new Error(`Could not fetch video (${res.status})`);
+          let entry = videoCache.get(jobId);
+          let blobUrl = entry?.url;
+
+          if (!blobUrl) {
+            let blob = null;
+            if (fromCache) {
+              blob = await loadVideoBlob(jobId);
+              if (!blob) {
+                throw new Error("Video not available offline.");
+              }
+              blobUrl = await storeVideo(jobId, blob, { skipDb: true });
+            } else {
+              blob = await fetchVideo(jobId);
+              if (!blob) {
+                throw new Error("Video unavailable.");
+              }
+              blobUrl = await storeVideo(jobId, blob);
+            }
           }
 
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          resultVideo.src = url;
-          resultVideo.classList.add("visible");
-          resultVideo.play().catch(() => {});
+          setActiveVideo(jobId, blobUrl);
           updateStatus("completed", 100);
         } catch (err) {
           updateStatus(err.message || "Failed to load generated video.", null, true);
@@ -427,6 +501,7 @@
 
       function initializeHistory() {
         historyEntries = loadStoredHistory();
+        cachedVideoIds = loadStoredVideoIds();
         renderHistory();
       }
 
@@ -444,11 +519,9 @@
           promptInput.value = prompt;
         }
 
-        resultVideo.classList.remove("visible");
-        resultVideo.removeAttribute("src");
-
+        clearActiveVideo();
         setLoading(true);
-        loadVideo(jobId).finally(() => {
+        loadVideo(jobId, { fromCache: true }).finally(() => {
           setLoading(false);
         });
       }
@@ -503,19 +576,212 @@
             item.appendChild(meta);
           }
 
-          const action = document.createElement("button");
-          action.type = "button";
-          action.className = "history-play";
-          action.dataset.jobId = entry.jobId;
-          action.dataset.prompt = entry.prompt;
-          action.textContent = "Replay";
-          item.appendChild(action);
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "history-play";
+        action.dataset.jobId = entry.jobId;
+        action.dataset.prompt = entry.prompt;
+        action.textContent = "Replay";
+        item.appendChild(action);
 
-          historyList.appendChild(item);
+        if (hasCachedVideo(entry.jobId)) {
+          const download = document.createElement("button");
+          download.type = "button";
+          download.className = "history-play";
+          download.dataset.jobId = entry.jobId;
+          download.dataset.prompt = entry.prompt;
+          download.dataset.action = "download";
+          download.textContent = "Download";
+          item.appendChild(download);
+        }
+
+        historyList.appendChild(item);
+      });
+    }
+
+    async function fetchVideo(jobId) {
+      const res = await fetch(`/files/${jobId}/out.mp4`);
+      if (!res.ok) {
+        return null;
+      }
+      return res.blob();
+    }
+
+    async function storeVideo(jobId, blob, { skipDb = false } = {}) {
+      if (!blob) {
+        return null;
+      }
+
+      const previous = videoCache.get(jobId);
+      if (previous?.url) {
+        URL.revokeObjectURL(previous.url);
+      }
+
+      const url = URL.createObjectURL(blob);
+      videoCache.set(jobId, { url, size: blob.size ?? 0 });
+      cachedVideoIds.add(jobId);
+      saveStoredVideoIds();
+
+      if (!skipDb) {
+        try {
+          await saveVideoBlob(jobId, blob);
+        } catch (err) {
+          console.warn("Failed to persist video locally", err);
+        }
+      }
+
+      return url;
+    }
+
+    function setActiveVideo(jobId, url) {
+      if (!url) {
+        return;
+      }
+
+      currentJobId = jobId;
+      player.classList.add("visible");
+      resultVideo.src = url;
+      resultVideo.classList.add("visible");
+      if (downloadBtn) {
+        downloadBtn.disabled = false;
+        downloadBtn.dataset.jobId = jobId;
+      }
+      resultVideo.currentTime = 0;
+      resultVideo.play().catch(() => {});
+    }
+
+    function clearActiveVideo() {
+      if (player) {
+        player.classList.remove("visible");
+      }
+      resultVideo.pause();
+      resultVideo.removeAttribute("src");
+      resultVideo.classList.remove("visible");
+      resultVideo.load();
+      if (downloadBtn) {
+        downloadBtn.disabled = true;
+        delete downloadBtn.dataset.jobId;
+      }
+      currentJobId = null;
+    }
+
+    async function downloadCachedVideo(jobId) {
+      if (!jobId) {
+        return;
+      }
+
+      try {
+        let url = videoCache.get(jobId)?.url;
+        if (!url) {
+          const blob = await loadVideoBlob(jobId);
+          if (!blob) {
+            updateStatus("Video not available offline.", null, true);
+            return;
+          }
+          url = await storeVideo(jobId, blob, { skipDb: true });
+        }
+
+        triggerDownload(jobId, url);
+      } catch (err) {
+        updateStatus((err && err.message) || "Unable to download video.", null, true);
+      }
+    }
+
+    function triggerDownload(jobId, url) {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `zeus-${jobId}.mp4`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    }
+
+    function hasCachedVideo(jobId) {
+      return videoCache.has(jobId) || cachedVideoIds.has(jobId);
+    }
+
+    function loadStoredVideoIds() {
+      if (!("localStorage" in window)) {
+        return new Set();
+      }
+
+      try {
+        const raw = window.localStorage.getItem(HISTORY_VIDEO_KEY);
+        if (!raw) {
+          return new Set();
+        }
+
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          return new Set();
+        }
+
+        return new Set(parsed.filter((id) => typeof id === "string" && id.length > 0));
+      } catch {
+        return new Set();
+      }
+    }
+
+    function saveStoredVideoIds() {
+      if (!("localStorage" in window)) {
+        return;
+      }
+
+      try {
+        window.localStorage.setItem(HISTORY_VIDEO_KEY, JSON.stringify(Array.from(cachedVideoIds)));
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    async function getVideoDb() {
+      if (!("indexedDB" in window)) {
+        return null;
+      }
+
+      if (!dbPromise) {
+        dbPromise = new Promise((resolve, reject) => {
+          const open = indexedDB.open(DB_NAME, 1);
+          open.onupgradeneeded = () => {
+            open.result.createObjectStore(DB_STORE);
+          };
+          open.onsuccess = () => resolve(open.result);
+          open.onerror = () => reject(open.error ?? new Error("indexedDB open failed"));
         });
       }
 
-      function loadStoredHistory() {
+      return dbPromise;
+    }
+
+    async function saveVideoBlob(jobId, blob) {
+      const db = await getVideoDb();
+      if (!db) {
+        return;
+      }
+
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readwrite");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error("Failed to store video"));
+        tx.objectStore(DB_STORE).put(blob, jobId);
+      });
+    }
+
+    async function loadVideoBlob(jobId) {
+      const db = await getVideoDb();
+      if (!db) {
+        return null;
+      }
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readonly");
+        const request = tx.objectStore(DB_STORE).get(jobId);
+        request.onsuccess = () => resolve(request.result ?? null);
+        request.onerror = () => reject(request.error ?? new Error("Failed to load cached video"));
+      });
+    }
+
+     function loadStoredHistory() {
         if (!("localStorage" in window)) {
           return [];
         }
