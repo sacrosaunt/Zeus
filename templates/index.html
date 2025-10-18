@@ -17,11 +17,20 @@
         min-height: 100vh;
         display: flex;
         justify-content: center;
-        align-items: center;
+        align-items: flex-start;
+        padding: 3rem 1.5rem;
+      }
+
+      .layout {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+        width: min(1100px, 100%);
       }
 
       main {
-        width: min(720px, 92vw);
+        width: 100%;
+        max-width: 720px;
         padding: 2.5rem;
         border-radius: 18px;
         background: rgba(255, 255, 255, 0.04);
@@ -130,29 +139,146 @@
       .error {
         color: #ff6b6b;
       }
+
+      .history {
+        flex: 0 0 300px;
+        width: 100%;
+        padding: 1.75rem;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+        backdrop-filter: blur(12px);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .history h2 {
+        margin: 0;
+        font-size: 1.35rem;
+        letter-spacing: 0.015em;
+      }
+
+      .history-empty {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.95rem;
+      }
+
+      .history-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        overflow-y: auto;
+        max-height: 60vh;
+        padding-right: 0.25rem;
+      }
+
+      .history-item {
+        padding: 1rem;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+
+      .history-prompt {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.35;
+      }
+
+      .history-meta {
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .history-play {
+        align-self: flex-start;
+        padding: 0.45rem 0.9rem;
+        font-size: 0.85rem;
+        border-radius: 999px;
+        background: rgba(91, 140, 255, 0.16);
+        border: 1px solid rgba(91, 140, 255, 0.45);
+        color: inherit;
+        cursor: pointer;
+        transition: transform 120ms ease, background 120ms ease;
+      }
+
+      .history-play:hover,
+      .history-play:focus-visible {
+        background: rgba(91, 140, 255, 0.3);
+        transform: translateY(-1px);
+      }
+
+      @media (min-width: 920px) {
+        .layout {
+          flex-direction: row;
+          align-items: stretch;
+        }
+
+        .layout main {
+          flex: 1 1 0%;
+        }
+
+        .history {
+          max-height: none;
+        }
+      }
+
+      @media (max-width: 919px) {
+        body {
+          padding: 2.5rem 1.25rem;
+        }
+
+        main {
+          padding: 2rem;
+        }
+
+        .history {
+          flex: 1 1 auto;
+          padding: 1.5rem;
+        }
+
+        .history-list {
+          max-height: none;
+        }
+      }
     </style>
   </head>
   <body>
-    <main>
-      <h1>Zeus Video Inference</h1>
-      <p class="lead">Welcome Voltage Park! Describe the shot you want and let the LTX-Video model bring it to life.</p>
-      <form id="prompt-form">
-        <label for="prompt">
-          Prompt
-          <textarea id="prompt" name="prompt" placeholder="A cinematic drone shot over neon-lit mountains at dusk"></textarea>
-        </label>
-        <button type="submit">Generate</button>
-      </form>
+    <div class="layout">
+      <main>
+        <h1>Zeus</h1>
+        <p class="lead">Welcome Voltage Park! Describe the shot you want and let the LTX-Video model bring it to life.</p>
+        <form id="prompt-form">
+          <label for="prompt">
+            Prompt
+            <textarea id="prompt" name="prompt" placeholder="A cinematic drone shot over neon-lit mountains at dusk"></textarea>
+          </label>
+          <button type="submit">Generate</button>
+        </form>
 
-      <section id="status" class="status" aria-live="polite">
-        <div id="status-text" aria-atomic="true">Idle</div>
-        <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
-          <span id="progress-fill"></span>
-        </div>
-      </section>
+        <section id="status" class="status" aria-live="polite">
+          <div id="status-text" aria-atomic="true">Idle</div>
+          <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <span id="progress-fill"></span>
+          </div>
+        </section>
 
-      <video id="result-video" controls playsinline></video>
-    </main>
+        <video id="result-video" controls playsinline></video>
+      </main>
+
+      <aside class="history" aria-label="Past videos">
+        <h2>Past Videos</h2>
+        <p id="history-empty" class="history-empty">No saved videos yet. Generate one to build your library.</p>
+        <ul id="history-list" class="history-list" aria-live="polite"></ul>
+      </aside>
+    </div>
 
     <script>
       const form = document.getElementById("prompt-form");
@@ -163,9 +289,29 @@
       const progressFill = document.getElementById("progress-fill");
       const progressBar = statusSection.querySelector(".progress-bar");
       const resultVideo = document.getElementById("result-video");
+      const historyList = document.getElementById("history-list");
+      const historyEmptyState = document.getElementById("history-empty");
+      const HISTORY_STORAGE_KEY = "zeus-history";
 
       let pollTimer = null;
       let activeJobId = null;
+      let lastSubmittedPrompt = "";
+      let historyEntries = [];
+
+      initializeHistory();
+
+      if (historyList) {
+        historyList.addEventListener("click", (event) => {
+          const trigger = event.target.closest("button[data-job-id]");
+          if (!trigger) {
+            return;
+          }
+
+          const { jobId = "" } = trigger.dataset;
+          const prompt = trigger.dataset.prompt ?? "";
+          handleHistoryReplay(jobId, prompt);
+        });
+      }
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -180,6 +326,7 @@
           updateStatus("Please enter a prompt.", null, true);
           return;
         }
+        lastSubmittedPrompt = prompt;
 
         setLoading(true);
 
@@ -238,6 +385,7 @@
 
           if (status === "completed") {
             await loadVideo(jobId);
+            registerHistory(jobId, lastSubmittedPrompt);
             clearPoll();
             setLoading(false);
           } else if (status === "failed") {
@@ -273,6 +421,159 @@
         if (pollTimer) {
           window.clearInterval(pollTimer);
           pollTimer = null;
+        }
+      }
+
+      function initializeHistory() {
+        historyEntries = loadStoredHistory();
+        renderHistory();
+      }
+
+      function handleHistoryReplay(jobId, prompt) {
+        if (!jobId) {
+          return;
+        }
+
+        clearPoll();
+        activeJobId = null;
+        statusSection.classList.add("visible");
+        updateStatus("Loading saved video...", null);
+
+        if (prompt) {
+          promptInput.value = prompt;
+        }
+
+        resultVideo.classList.remove("visible");
+        resultVideo.removeAttribute("src");
+
+        setLoading(true);
+        loadVideo(jobId).finally(() => {
+          setLoading(false);
+        });
+      }
+
+      function registerHistory(jobId, prompt) {
+        if (!jobId || !prompt) {
+          return;
+        }
+
+        const deduped = historyEntries.filter((entry) => entry.jobId !== jobId);
+        historyEntries = [
+          {
+            jobId,
+            prompt,
+            createdAt: Date.now(),
+          },
+          ...deduped,
+        ].slice(0, 10);
+
+        saveHistory();
+        renderHistory();
+      }
+
+      function renderHistory() {
+        if (!historyList || !historyEmptyState) {
+          return;
+        }
+
+        historyList.innerHTML = "";
+
+        if (historyEntries.length === 0) {
+          historyEmptyState.style.display = "block";
+          return;
+        }
+
+        historyEmptyState.style.display = "none";
+
+        historyEntries.forEach((entry) => {
+          const item = document.createElement("li");
+          item.className = "history-item";
+
+          const promptEl = document.createElement("p");
+          promptEl.className = "history-prompt";
+          promptEl.textContent = entry.prompt;
+          item.appendChild(promptEl);
+
+          const timestamp = formatTimestamp(entry.createdAt);
+          if (timestamp) {
+            const meta = document.createElement("div");
+            meta.className = "history-meta";
+            meta.textContent = timestamp;
+            item.appendChild(meta);
+          }
+
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "history-play";
+          action.dataset.jobId = entry.jobId;
+          action.dataset.prompt = entry.prompt;
+          action.textContent = "Replay";
+          item.appendChild(action);
+
+          historyList.appendChild(item);
+        });
+      }
+
+      function loadStoredHistory() {
+        if (!("localStorage" in window)) {
+          return [];
+        }
+
+        try {
+          const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+          if (!raw) {
+            return [];
+          }
+
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) {
+            return [];
+          }
+
+          return parsed
+            .filter(
+              (entry) =>
+                entry &&
+                typeof entry === "object" &&
+                typeof entry.jobId === "string" &&
+                entry.jobId.length > 0 &&
+                typeof entry.prompt === "string"
+            )
+            .map((entry) => ({
+              jobId: entry.jobId,
+              prompt: entry.prompt,
+              createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
+            }));
+        } catch {
+          return [];
+        }
+      }
+
+      function saveHistory() {
+        if (!("localStorage" in window)) {
+          return;
+        }
+
+        try {
+          window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyEntries));
+        } catch {
+          // Ignore storage errors (e.g. quota exceeded)
+        }
+      }
+
+      function formatTimestamp(value) {
+        if (!value) {
+          return "";
+        }
+
+        try {
+          const date = new Date(value);
+          if (Number.isNaN(date.getTime())) {
+            return "";
+          }
+          return date.toLocaleString();
+        } catch {
+          return "";
         }
       }
 
