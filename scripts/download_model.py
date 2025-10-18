@@ -76,6 +76,7 @@ def main() -> int:
                 "*.txt",
                 "*.model",
                 "*.config",
+                "*.py",
             ],
         )
 
