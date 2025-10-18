@@ -40,6 +40,8 @@ services:
       LTX_WIDTH: "768"
       LTX_INFERENCE_STEPS: "40"
       HF_HOME: /models/hf-cache
+      FAKE_INFERENCE: "1"
+      FAKE_INFERENCE_SOURCE: /app/test.mp4
     volumes:
       - ./generated:/data/generated
       - ./models:/models

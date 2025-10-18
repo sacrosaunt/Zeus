@@ -78,6 +78,10 @@ instance/
 # Scrapy
 .scrapy
 
+# Assets
+models/
+test.mp4
+
 # Sphinx
 docs/_build/
 doc/_build/
