@@ -1,16 +1,16 @@
-services:
-  app-env: &app-env
-    REDIS_URL: redis://redis:6379/0
-    REDIS_QUEUE_KEY: jobs:queue
-    REDIS_STATUS_KEY: jobs:status
-    GENERATED_ROOT: /data/generated
+x-app-env: &app-env
+  REDIS_URL: redis://redis:6379/0
+  REDIS_QUEUE_KEY: jobs:queue
+  REDIS_STATUS_KEY: jobs:status
+  GENERATED_ROOT: /data/generated
 
+services:
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
 
-  app:
+  app1: &app-service
     build:
       context: .
       dockerfile: Dockerfile.app
@@ -18,10 +18,13 @@ services:
       <<: *app-env
     volumes:
       - ./generated:/data/generated
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     depends_on:
       - redis
+
+  app2:
+    <<: *app-service
 
   inference:
     build:
@@ -42,3 +45,13 @@ services:
       - ./models:/models
     depends_on:
       - redis
+
+  caddy:
+    image: caddy:2
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "5000:5000"
+    depends_on:
+      - app1
+      - app2
