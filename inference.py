@@ -73,12 +73,10 @@ def load_config() -> WorkerConfig:
     if missing:
         raise RuntimeError(f"Missing required configuration values: {', '.join(missing)}")
 
-    offline_mode = os.environ.get("HF_HUB_OFFLINE") == "1"
+    # Require a local snapshot of the model.
     model_path = Path(model_id)
-    if offline_mode and not model_path.exists():
-        raise RuntimeError(
-            "HF_HUB_OFFLINE=1 but LTX_MODEL_ID does not point to an existing model directory."
-        )
+    if not model_path.exists():
+        raise RuntimeError("LTX_MODEL_ID must point to an existing local model directory.")
 
     def _int_config(key: str) -> int:
         raw = _get(key)

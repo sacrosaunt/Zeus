@@ -37,7 +37,6 @@ services:
       LTX_WIDTH: "768"
       LTX_INFERENCE_STEPS: "40"
       HF_HOME: /models/hf-cache
-      HF_HUB_OFFLINE: "1"
     volumes:
       - ./generated:/data/generated
       - ./models:/models
