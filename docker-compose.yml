@@ -29,14 +29,17 @@ services:
       REDIS_QUEUE_KEY: jobs:queue
       REDIS_STATUS_KEY: jobs:status
       GENERATED_ROOT: /data/generated
-      LTX_MODEL_ID: Lightricks/LTX-Video
+      LTX_MODEL_ID: /models/LTX-Video
       LTX_DEVICE: auto
       LTX_NUM_FRAMES: "121"
       LTX_OUTPUT_FPS: "24"
       LTX_HEIGHT: "512"
       LTX_WIDTH: "768"
       LTX_INFERENCE_STEPS: "40"
+      HF_HOME: /models/hf-cache
+      HF_HUB_OFFLINE: "1"
     volumes:
       - ./generated:/data/generated
+      - ./models:/models
     depends_on:
       - redis
