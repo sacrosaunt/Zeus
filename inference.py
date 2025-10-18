@@ -112,7 +112,6 @@ class LTXVideoModel:
         self.pipeline = DiffusionPipeline.from_pretrained(
             model_id,
             torch_dtype=dtype,
-            trust_remote_code=True,
         )
         self.pipeline = self.pipeline.to(device)
         self.device = device
@@ -169,7 +168,28 @@ def frames_to_video(frames: Sequence, output_path: Path, fps: int) -> None:
     import imageio.v2 as imageio
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    arrays: List[np.ndarray] = [np.asarray(frame) for frame in frames]
+    arrays: List[np.ndarray] = []
+    for index, frame in enumerate(frames):
+        if hasattr(frame, "detach"):
+            array = frame.detach().to("cpu").numpy()
+        else:
+            array = np.asarray(frame)
+        if array.ndim == 4 and array.shape[0] == 1:
+            array = array[0]
+        if array.ndim == 3 and array.shape[-1] not in (1, 2, 3, 4) and array.shape[0] in (1, 2, 3, 4):
+            array = np.moveaxis(array, 0, -1)
+        if array.ndim == 3 and array.shape[-1] == 1:
+            array = array[..., 0]
+        if array.ndim not in (2, 3):
+            raise ValueError(f"Unsupported frame shape at index {index}: {array.shape}")
+        if array.ndim == 3 and array.shape[-1] not in (1, 2, 3, 4):
+            raise ValueError(f"Invalid channel dimension for frame {index}: {array.shape}")
+        if array.dtype in (np.float32, np.float64, np.float16):
+            array = np.clip(array, 0.0, 1.0)
+            array = (array * 255.0).round().astype(np.uint8)
+        elif array.dtype != np.uint8:
+            array = array.astype(np.uint8)
+        arrays.append(array)
     LOGGER.info("Writing %d frames to %s (fps=%d)", len(arrays), output_path, fps)
     imageio.mimwrite(output_path, arrays, fps=fps, codec="libx264", quality=8)
 
