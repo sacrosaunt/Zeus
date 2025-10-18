@@ -100,7 +100,7 @@ class LTXVideoModel:
 
     def __init__(self, model_id: str, device_preference: str = "auto"):
         import torch
-        from diffusers import AutoPipelineForText2Video
+        from diffusers import DiffusionPipeline
 
         if device_preference == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -109,7 +109,7 @@ class LTXVideoModel:
 
         dtype = torch.float16 if device.startswith("cuda") else torch.float32
         LOGGER.info("Loading LTX-Video model %s on %s", model_id, device)
-        self.pipeline = AutoPipelineForText2Video.from_pretrained(
+        self.pipeline = DiffusionPipeline.from_pretrained(
             model_id,
             torch_dtype=dtype,
         )

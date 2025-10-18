@@ -121,10 +121,9 @@ def create_app() -> Flask:
 
         response = {"job_id": job_id, "status": status}
 
-        if status == "queued":
-            handler = redis_client.hget(job_metadata_key, job_id)
-            if handler:
-                response["handled_by"] = handler
+        handler = redis_client.hget(job_metadata_key, job_id)
+        if handler:
+            response["handled_by"] = handler
         if percent is not None:
             response["percent_complete"] = percent
 
