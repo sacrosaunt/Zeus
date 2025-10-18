@@ -28,6 +28,7 @@ def create_app() -> Flask:
     model_ready_path = Path(model_ready_value).resolve() if model_ready_value else None
     model_downloading_path = Path(model_downloading_value).resolve() if model_downloading_value else None
     app_instance = os.environ.get("APP_INSTANCE") or socket.gethostname()
+    job_metadata_key = f"{redis_status_key}:metadata"
 
     def _format_status(state: str, percent: int | None = None) -> str:
         if percent is None:
@@ -82,9 +83,10 @@ def create_app() -> Flask:
             )
 
         job_id = str(uuid.uuid4())
-        job_descriptor = {"job_id": job_id, "prompt": prompt}
+        job_descriptor = {"job_id": job_id, "prompt": prompt, "handled_by": app_instance}
         with redis_client.pipeline() as pipe:
             pipe.hset(redis_status_key, job_id, _format_status("queued", 0))
+            pipe.hset(job_metadata_key, job_id, app_instance)
             pipe.rpush(redis_queue_key, json.dumps(job_descriptor))
             pipe.execute()
 
@@ -118,6 +120,11 @@ def create_app() -> Flask:
                 percent = None
 
         response = {"job_id": job_id, "status": status}
+
+        if status == "queued":
+            handler = redis_client.hget(job_metadata_key, job_id)
+            if handler:
+                response["handled_by"] = handler
         if percent is not None:
             response["percent_complete"] = percent
 
