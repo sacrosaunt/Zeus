@@ -17,6 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 class WorkerConfig:
     redis_url: str
     redis_queue_key: str
+    redis_status_key: str
     generated_root: Path
     model_id: str
     device: str
@@ -32,6 +33,7 @@ def load_config() -> WorkerConfig:
     config = dotenv_values(".env")
     redis_url = config.get("REDIS_URL")
     redis_queue_key = config.get("REDIS_QUEUE_KEY")
+    redis_status_key = config.get("REDIS_STATUS_KEY")
     generated_root_value = config.get("GENERATED_ROOT")
     model_id = config.get("LTX_MODEL_ID")
     device = config.get("LTX_DEVICE")
@@ -41,6 +43,7 @@ def load_config() -> WorkerConfig:
         for key, value in {
             "REDIS_URL": redis_url,
             "REDIS_QUEUE_KEY": redis_queue_key,
+            "REDIS_STATUS_KEY": redis_status_key,
             "GENERATED_ROOT": generated_root_value,
             "LTX_MODEL_ID": model_id,
             "LTX_DEVICE": device,
@@ -70,6 +73,7 @@ def load_config() -> WorkerConfig:
     return WorkerConfig(
         redis_url=redis_url,
         redis_queue_key=redis_queue_key,
+        redis_status_key=redis_status_key,
         generated_root=Path(generated_root_value).resolve(),
         model_id=model_id,
         device=device,
@@ -111,7 +115,7 @@ class LTXVideoModel:
         width: int,
         num_inference_steps: int,
     ) -> Sequence:
-        """Run the model and return a sequence of frames (PIL images)."""
+        """Run the model and return a sequence of frames."""
         LOGGER.info(
             "Running inference for prompt '%s' (%d frames, %dx%d, %d steps)",
             prompt,
@@ -146,6 +150,7 @@ class InferenceWorker:
     def __init__(self, config: WorkerConfig):
         self.config = config
         self.redis = Redis.from_url(config.redis_url, decode_responses=True)
+        self.status_key = config.redis_status_key
         self.model = LTXVideoModel(config.model_id, config.device)
 
     def run(self) -> None:
@@ -162,6 +167,9 @@ class InferenceWorker:
             except Exception:  # pragma: no cover - runtime guard
                 LOGGER.exception("Unhandled exception in worker loop; continuing in 5 seconds.")
                 time.sleep(5)
+
+    def _set_status(self, job_id: str, status: str) -> None:
+        self.redis.hset(self.status_key, job_id, status)
 
     def _dequeue_job(self) -> dict | None:
         """Block on the Redis queue for the next job using BLPOP."""
@@ -185,6 +193,7 @@ class InferenceWorker:
         prompt = job["prompt"]
         output_path = self.config.generated_root / job_id / "out.mp4"
         try:
+            self._set_status(job_id, "running")
             frames = self.model.generate_frames(
                 prompt,
                 num_frames=self.config.frames,
@@ -193,8 +202,10 @@ class InferenceWorker:
                 num_inference_steps=self.config.inference_steps,
             )
             frames_to_video(frames, output_path, fps=self.config.fps)
+            self._set_status(job_id, "completed")
             LOGGER.info("Job %s completed successfully.", job_id)
-        except Exception:
+        except Exception as exc:
+            self._set_status(job_id, "failed")
             LOGGER.exception("Job %s failed during inference.", job_id)
 
 
