@@ -138,6 +138,7 @@ class LTXVideoRunner:
         checkpoint_name = Path(raw_checkpoint).name
         expected_path = self.model_root / checkpoint_name
         LOGGER.info("Configured checkpoint identifier: %s", raw_checkpoint)
+        LOGGER.info("Checkpoint filename resolved to %r (len=%d)", checkpoint_name, len(checkpoint_name))
         LOGGER.info("Expecting checkpoint at %s", expected_path)
         if not expected_path.exists():
             try:
@@ -145,7 +146,7 @@ class LTXVideoRunner:
             except OSError as exc:
                 LOGGER.warning("Stat on checkpoint path failed: %s", exc)
             try:
-                contents = ", ".join(sorted(entry.name for entry in self.model_root.iterdir()))
+                contents = ", ".join(sorted(f"{entry.name!r}" for entry in self.model_root.iterdir()))
             except OSError as exc:
                 LOGGER.warning("Unable to list model root %s: %s", self.model_root, exc)
             else:
