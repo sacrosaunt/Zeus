@@ -4,9 +4,18 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 
+import imageio.v2 as imageio
 import numpy as np
+import torch
+from ltx_video.inference import (
+    calculate_padding,
+    create_ltx_video_pipeline,
+    get_device as ltx_get_device,
+    load_pipeline_config,
+    seed_everething,
+)
 from redis import Redis
 
 LOGGER = logging.getLogger(__name__)
@@ -19,7 +28,7 @@ class WorkerConfig:
     redis_queue_key: str
     redis_status_key: str
     generated_root: Path
-    model_id: str
+    model_path: Path
     device: str
     frames: int
     fps: int
@@ -45,7 +54,7 @@ def load_config() -> WorkerConfig:
     redis_queue_key = _get("REDIS_QUEUE_KEY")
     redis_status_key = _get("REDIS_STATUS_KEY")
     generated_root_value = _get("GENERATED_ROOT")
-    model_id = _get("LTX_MODEL_ID")
+    model_path_value = _get("LTX_MODEL_ID")
     device = _get("LTX_DEVICE")
 
     missing = [
@@ -55,7 +64,7 @@ def load_config() -> WorkerConfig:
             "REDIS_QUEUE_KEY": redis_queue_key,
             "REDIS_STATUS_KEY": redis_status_key,
             "GENERATED_ROOT": generated_root_value,
-            "LTX_MODEL_ID": model_id,
+            "LTX_MODEL_ID": model_path_value,
             "LTX_DEVICE": device,
         }.items()
         if not value
@@ -73,6 +82,10 @@ def load_config() -> WorkerConfig:
     if missing:
         raise RuntimeError(f"Missing required configuration values: {', '.join(missing)}")
 
+    model_path = Path(model_path_value).expanduser().resolve()
+    if not model_path.exists():
+        raise RuntimeError(f"Model directory {model_path} does not exist")
+
     def _int_config(key: str) -> int:
         raw = _get(key)
         try:
@@ -85,7 +98,7 @@ def load_config() -> WorkerConfig:
         redis_queue_key=redis_queue_key,
         redis_status_key=redis_status_key,
         generated_root=Path(generated_root_value).resolve(),
-        model_id=model_id,
+        model_path=model_path,
         device=device,
         frames=_int_config("LTX_NUM_FRAMES"),
         fps=_int_config("LTX_OUTPUT_FPS"),
@@ -95,119 +108,131 @@ def load_config() -> WorkerConfig:
     )
 
 
-class LTXVideoModel:
-    """Wrapper around the LTXV diffusion pipeline."""
+class LTXVideoRunner:
+    """Minimal wrapper around the official LTX-Video pipeline."""
 
-    def __init__(self, model_id: str, device_preference: str = "auto"):
-        import torch
-        from diffusers import DiffusionPipeline
+    _NEGATIVE_PROMPT = "worst quality, inconsistent motion, blurry, jittery, distorted"
 
-        if device_preference == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            device = device_preference
+    def __init__(self, model_root: Path, device_preference: str = "auto") -> None:
+        self.model_root = model_root
+        self.config_path = self._discover_config()
+        self.device = self._resolve_device(device_preference)
 
-        dtype = torch.float16 if device.startswith("cuda") else torch.float32
-        LOGGER.info("Loading LTXV model %s on %s", model_id, device)
-        self.pipeline = DiffusionPipeline.from_pretrained(
-            model_id,
-            torch_dtype=dtype,
+        config = load_pipeline_config(str(self.config_path))
+        self._guidance_scale = config.get("guidance_scale", 1.0)
+        self._default_steps = config.get("num_inference_steps", 8)
+        self._decode_timestep = config.get("decode_timestep")
+        self._decode_noise_scale = config.get("decode_noise_scale")
+
+        checkpoint_path = self.model_root / config["checkpoint_path"]
+        LOGGER.info(
+            "Loading LTX-Video pipeline (checkpoint %s, config %s)",
+            checkpoint_path,
+            self.config_path,
         )
-        self.pipeline = self.pipeline.to(device)
-        self.device = device
+        self.pipeline = create_ltx_video_pipeline(
+            ckpt_path=str(checkpoint_path),
+            precision=config.get("precision", "bfloat16"),
+            text_encoder_model_name_or_path=config["text_encoder_model_name_or_path"],
+            sampler=config.get("sampler"),
+            device=self.device,
+            enhance_prompt=False,
+        )
 
-    def generate_frames(
+    def generate(
         self,
         prompt: str,
         *,
-        num_frames: int,
         height: int,
         width: int,
+        num_frames: int,
         num_inference_steps: int,
-        callback: Callable | None = None,
-        callback_steps: int = 1,
-    ) -> Sequence:
-        """Run the model and return a sequence of frames."""
-        LOGGER.info(
-            "Running inference for prompt '%s' (%d frames, %dx%d, %d steps)",
-            prompt,
-            num_frames,
-            width,
-            height,
-            num_inference_steps,
-        )
-        if callback is not None:
-            step_interval = max(1, callback_steps or 1)
+        fps: int,
+        output_path: Path,
+        progress_callback: Callable[[int], None] | None = None,
+    ) -> None:
+        """Generate a video for the given prompt and persist it to disk."""
+        steps = num_inference_steps or self._default_steps
+        total_steps = max(1, steps)
+        seed = int(time.time() * 1000) & 0xFFFFFFFF
+        seed_everething(seed)
+        generator = torch.Generator(device=self.device).manual_seed(seed)
 
-            def _on_step_end(
-                _pipe, step: int, timestep, callback_kwargs: dict,
-            ) -> dict:
-                """Invoke legacy callback hook to report progress."""
-                if (step + 1) % step_interval == 0:
-                    try:
-                        callback(step, timestep, callback_kwargs.get("latents"))
-                    except Exception:  # pragma: no cover - defensive
-                        LOGGER.exception("Progress callback failed")
-                return callback_kwargs
-        else:
-            _on_step_end = None
+        height_padded = ((height + 31) // 32) * 32
+        width_padded = ((width + 31) // 32) * 32
+        num_frames_padded = ((max(num_frames, 1) - 2) // 8 + 1) * 8 + 1
+        padding = calculate_padding(height, width, height_padded, width_padded)
 
-        output = self.pipeline(
-            prompt=prompt,
-            num_frames=num_frames,
-            height=height,
-            width=width,
-            num_inference_steps=num_inference_steps,
-            callback_on_step_end=_on_step_end,
-        )
-        return output.frames
+        last_percent = -1
 
+        def _on_step(_pipe, step: int, _timestep, kwargs: dict) -> dict:
+            nonlocal last_percent
+            if progress_callback is not None:
+                percent = min(99, int(((step + 1) * 100) / total_steps))
+                if percent != last_percent:
+                    last_percent = percent
+                    progress_callback(percent)
+            return kwargs
 
-def frames_to_video(frames: Sequence, output_path: Path, fps: int) -> None:
-    """Persist a sequence of PIL frames to an mp4 file."""
-    import imageio.v2 as imageio
+        call_kwargs: dict[str, object] = {
+            "prompt": prompt,
+            "negative_prompt": self._NEGATIVE_PROMPT,
+            "height": height_padded,
+            "width": width_padded,
+            "num_frames": num_frames_padded,
+            "num_inference_steps": steps,
+            "frame_rate": fps,
+            "output_type": "pt",
+            "generator": generator,
+            "guidance_scale": self._guidance_scale,
+            "vae_per_channel_normalize": True,
+            "is_video": True,
+        }
+        if progress_callback is not None:
+            call_kwargs["callback_on_step_end"] = _on_step
+        if self._decode_timestep is not None:
+            call_kwargs["decode_timestep"] = self._decode_timestep
+        if self._decode_noise_scale is not None:
+            call_kwargs["decode_noise_scale"] = self._decode_noise_scale
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    arrays: list[np.ndarray] = []
+        outputs = self.pipeline(**call_kwargs)
+        images = outputs.images
 
-    def _finalize(array: np.ndarray, outer_index: int, inner_index: int | None = None) -> np.ndarray:
-        origin = f"{outer_index}" if inner_index is None else f"{outer_index}:{inner_index}"
-        if array.ndim == 3 and array.shape[-1] not in (1, 2, 3, 4) and array.shape[0] in (1, 2, 3, 4):
-            array = np.moveaxis(array, 0, -1)
-        if array.ndim == 3 and array.shape[-1] == 1:
-            array = array[..., 0]
-        if array.ndim not in (2, 3):
-            raise ValueError(f"Unsupported frame shape at index {origin}: {array.shape}")
-        if array.ndim == 3 and array.shape[-1] not in (1, 2, 3, 4):
-            raise ValueError(f"Invalid channel dimension for frame {origin}: {array.shape}")
-        if array.dtype in (np.float32, np.float64, np.float16):
-            array = np.clip(array, 0.0, 1.0)
-            array = (array * 255.0).round().astype(np.uint8)
-        elif array.dtype != np.uint8:
-            array = array.astype(np.uint8)
-        return array
+        pad_left, pad_right, pad_top, pad_bottom = padding
+        pad_bottom = -pad_bottom or images.shape[3]
+        pad_right = -pad_right or images.shape[4]
+        images = images[:, :, :num_frames, pad_top:pad_bottom, pad_left:pad_right]
 
-    for index, frame in enumerate(frames):
-        if hasattr(frame, "detach"):
-            array = frame.detach().to("cpu").numpy()
-        else:
-            array = np.asarray(frame)
-        if array.ndim == 4:
-            slices: list[np.ndarray]
-            if array.shape[0] == 1:
-                slices = [array[0]]
-            elif array.shape[-1] in (1, 2, 3, 4):
-                slices = [array[i] for i in range(array.shape[0])]
-            elif array.shape[1] in (1, 2, 3, 4):
-                slices = [np.moveaxis(array[i], 0, -1) for i in range(array.shape[0])]
-            else:
-                raise ValueError(f"Unsupported frame batch shape at index {index}: {array.shape}")
-            for inner_index, item in enumerate(slices):
-                arrays.append(_finalize(item, index, inner_index))
-        else:
-            arrays.append(_finalize(array, index))
-    LOGGER.info("Writing %d frames to %s (fps=%d)", len(arrays), output_path, fps)
-    imageio.mimwrite(output_path, arrays, fps=fps, codec="libx264", quality=8)
+        video_np = images[0].permute(1, 2, 3, 0).cpu().float().numpy()
+        video_np = np.clip(video_np, 0.0, 1.0)
+        video_np = (video_np * 255).astype(np.uint8)
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        LOGGER.info("Writing %s (%d frames @ %dfps)", output_path, video_np.shape[0], fps)
+        with imageio.get_writer(output_path, fps=fps, codec="libx264", quality=8) as writer:
+            for frame in video_np:
+                writer.append_data(frame)
+
+        if progress_callback is not None and last_percent < 99:
+            progress_callback(99)
+
+    def _discover_config(self) -> Path:
+        candidates: list[Path] = []
+        configs_dir = self.model_root / "configs"
+        if configs_dir.is_dir():
+            candidates.extend(sorted(configs_dir.glob("*.yaml")))
+            candidates.extend(sorted(configs_dir.glob("*.yml")))
+        if candidates:
+            return candidates[0]
+        raise RuntimeError(f"No pipeline config found under {configs_dir}")
+
+    @staticmethod
+    def _resolve_device(preference: str) -> str:
+        if preference and preference != "auto":
+            return preference
+        return ltx_get_device()
+
 
 
 class InferenceWorker:
@@ -218,7 +243,7 @@ class InferenceWorker:
         self.redis = Redis.from_url(config.redis_url, decode_responses=True)
         self.status_key = config.redis_status_key
         self.metadata_key = f"{self.status_key}:metadata"
-        self.model = LTXVideoModel(config.model_id, config.device)
+        self.runner = LTXVideoRunner(config.model_path, config.device)
 
     def run(self) -> None:
         LOGGER.info("Starting inference worker listening on queue '%s'", self.config.redis_queue_key)
@@ -261,29 +286,28 @@ class InferenceWorker:
         handler = job.get("handled_by")
         output_path = self.config.generated_root / job_id / "out.mp4"
         last_percent = 0
-        total_steps = max(1, self.config.inference_steps)
         try:
             if handler:
                 self.redis.hset(self.metadata_key, job_id, handler)
             self._set_status(job_id, "running", 0)
 
-            def progress_callback(step: int, timestep, latents) -> None:
+            def progress_callback(percent: int) -> None:
                 nonlocal last_percent
-                percent = min(99, int(((step + 1) * 100) / total_steps))
-                if percent != last_percent:
-                    last_percent = percent
-                    self._set_status(job_id, "running", percent)
+                bounded = max(0, min(99, percent))
+                if bounded != last_percent:
+                    last_percent = bounded
+                    self._set_status(job_id, "running", bounded)
 
-            frames = self.model.generate_frames(
+            self.runner.generate(
                 prompt,
                 num_frames=self.config.frames,
                 height=self.config.height,
                 width=self.config.width,
                 num_inference_steps=self.config.inference_steps,
-                callback=progress_callback,
-                callback_steps=1,
+                fps=self.config.fps,
+                output_path=output_path,
+                progress_callback=progress_callback,
             )
-            frames_to_video(frames, output_path, fps=self.config.fps)
             self._set_status(job_id, "completed", 100)
             LOGGER.info("Job %s completed successfully.", job_id)
         except Exception:
