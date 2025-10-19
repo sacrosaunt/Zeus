@@ -9,6 +9,7 @@ from collections.abc import Callable
 import imageio.v2 as imageio
 import numpy as np
 import torch
+from huggingface_hub import hf_hub_download
 from ltx_video.inference import (
     calculate_padding,
     create_ltx_video_pipeline,
@@ -124,7 +125,18 @@ class LTXVideoRunner:
         self._decode_timestep = config.get("decode_timestep")
         self._decode_noise_scale = config.get("decode_noise_scale")
 
-        checkpoint_path = self.model_root / config["checkpoint_path"]
+        checkpoint_name = config["checkpoint_path"]
+        checkpoint_path = self.model_root / checkpoint_name
+        if not checkpoint_path.exists():
+            LOGGER.info("Checkpoint %s missing; downloading from hub", checkpoint_name)
+            downloaded = hf_hub_download(
+                repo_id="Lightricks/LTX-Video",
+                filename=checkpoint_name,
+                repo_type="model",
+                local_dir=str(self.model_root),
+                local_dir_use_symlinks=False,
+            )
+            checkpoint_path = Path(downloaded)
         LOGGER.info(
             "Loading LTX-Video pipeline (checkpoint %s, config %s)",
             checkpoint_path,
@@ -218,14 +230,22 @@ class LTXVideoRunner:
             progress_callback(99)
 
     def _discover_config(self) -> Path:
-        candidates: list[Path] = []
         configs_dir = self.model_root / "configs"
         if configs_dir.is_dir():
-            candidates.extend(sorted(configs_dir.glob("*.yaml")))
-            candidates.extend(sorted(configs_dir.glob("*.yml")))
-        if candidates:
-            return candidates[0]
-        raise RuntimeError(f"No pipeline config found under {configs_dir}")
+            for pattern in ("*.yaml", "*.yml"):
+                files = sorted(configs_dir.glob(pattern))
+                if files:
+                    return files[0]
+
+        LOGGER.info("Pipeline config not found locally; downloading from hub")
+        downloaded = hf_hub_download(
+            repo_id="Lightricks/LTX-Video",
+            filename="configs/ltxv-2b-0.9.6-distilled.yaml",
+            repo_type="model",
+            local_dir=str(self.model_root),
+            local_dir_use_symlinks=False,
+        )
+        return Path(downloaded)
 
     @staticmethod
     def _resolve_device(preference: str) -> str:
