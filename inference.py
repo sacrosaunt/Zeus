@@ -133,11 +133,13 @@ class LTXVideoRunner:
         self._decode_timestep = config.get("decode_timestep")
         self._decode_noise_scale = config.get("decode_noise_scale")
 
-        raw_checkpoint = config["checkpoint_path"]
-        checkpoint_name = Path(str(raw_checkpoint).strip()).name
-        checkpoint_path = (self.model_root / checkpoint_name).resolve()
-        LOGGER.info("Expecting checkpoint at %s", checkpoint_path)
-        if not checkpoint_path.exists():
+        LOGGER.info("Model root resolved to %s", self.model_root)
+        raw_checkpoint = str(config["checkpoint_path"]).strip()
+        checkpoint_name = Path(raw_checkpoint).name
+        expected_path = self.model_root / checkpoint_name
+        LOGGER.info("Configured checkpoint identifier: %s", raw_checkpoint)
+        LOGGER.info("Expecting checkpoint at %s", expected_path)
+        if not expected_path.exists():
             LOGGER.info("Checkpoint %s missing; downloading from hub", checkpoint_name)
             downloaded = hf_hub_download(
                 repo_id=self._HUB_REPO_ID,
@@ -146,6 +148,15 @@ class LTXVideoRunner:
                 local_dir=str(self.model_root),
             )
             checkpoint_path = Path(downloaded)
+            if expected_path.exists():
+                checkpoint_path = expected_path.resolve()
+            else:
+                LOGGER.info(
+                    "Downloaded checkpoint resides at %s; keeping that path for loading",
+                    checkpoint_path,
+                )
+        else:
+            checkpoint_path = expected_path.resolve()
         LOGGER.info(
             "Loading LTX-Video pipeline (checkpoint %s, config %s)",
             checkpoint_path,
