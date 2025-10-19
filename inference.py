@@ -133,7 +133,8 @@ class LTXVideoRunner:
         self._decode_timestep = config.get("decode_timestep")
         self._decode_noise_scale = config.get("decode_noise_scale")
 
-        checkpoint_name = config["checkpoint_path"]
+        raw_checkpoint = config["checkpoint_path"]
+        checkpoint_name = Path(str(raw_checkpoint).strip()).name
         checkpoint_path = self.model_root / checkpoint_name
         if not checkpoint_path.exists():
             LOGGER.info("Checkpoint %s missing; downloading from hub", checkpoint_name)
@@ -142,7 +143,6 @@ class LTXVideoRunner:
                 filename=checkpoint_name,
                 repo_type="model",
                 local_dir=str(self.model_root),
-                local_dir_use_symlinks=False,
             )
             checkpoint_path = Path(downloaded)
         LOGGER.info(

@@ -123,9 +123,8 @@ def main(argv: list[str] | None = None) -> int:
             repo_id=args.repo_id,
             filename=args.checkpoint,
             repo_type="model",
-        local_dir=str(destination),
-        local_dir_use_symlinks=False,
-    )
+            local_dir=str(destination),
+        )
 
     config_dir = destination / "configs"
     config_paths = sorted(
