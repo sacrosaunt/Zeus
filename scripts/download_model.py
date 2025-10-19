@@ -8,16 +8,16 @@ from pathlib import Path
 
 
 DEFAULT_REPO_ID = "Lightricks/LTX-Video"
-DEFAULT_LOCAL_DIR = "models/ltxv-2b-0.9.6-distilled"
-DEFAULT_CHECKPOINT = "ltxv-2b-0.9.6-distilled-04-25.safetensors"
+DEFAULT_LOCAL_DIR = "models/ltxv-2b-0.9.6"
+DEFAULT_CHECKPOINT = "ltxv-2b-0.9.6-dev-04-25.safetensors"
 
 ALLOW_PATTERNS: list[str] = [
     "model_index.json",
-    "configs/ltxv-2b-0.9.6-distilled.yaml",
+    "configs/ltxv-2b-0.9.6-dev.yaml",
     "*.txt",
     "*.py",
     "*.md",
-    "ltxv-2b-0.9.6-distilled*.safetensors",
+    "ltxv-2b-0.9.6-dev*.safetensors",
 ]
 
 

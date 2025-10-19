@@ -9,13 +9,13 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-MODEL_DIR = REPO_ROOT / "models" / "ltxv-2b-0.9.6-distilled"
+MODEL_DIR = REPO_ROOT / "models" / "ltxv-2b-0.9.6"
 STATUS_DIR = MODEL_DIR.parent
 READY_FLAG = STATUS_DIR / ".server_ready"
 BUILDING_FLAG = STATUS_DIR / ".server_building"
 LEGACY_READY_FLAG = STATUS_DIR / ".model_ready"
 LEGACY_DOWNLOADING_FLAG = STATUS_DIR / ".model_downloading"
-CHECKPOINT_FILENAME = "ltxv-2b-0.9.6-distilled-04-25.safetensors"
+CHECKPOINT_FILENAME = "ltxv-2b-0.9.6-dev-04-25.safetensors"
 REPO_ID = "Lightricks/LTX-Video"
 
 

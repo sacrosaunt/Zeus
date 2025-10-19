@@ -115,11 +115,11 @@ class LTXVideoRunner:
     """Minimal wrapper around the official LTX-Video pipeline."""
 
     _NEGATIVE_PROMPT = "worst quality, inconsistent motion, blurry, jittery, distorted"
-    _DEFAULT_CONFIG_FILENAME = "ltxv-2b-0.9.6-distilled.yaml"
+    _DEFAULT_CONFIG_FILENAME = "ltxv-2b-0.9.6-dev.yaml"
     _HUB_REPO_ID = "Lightricks/LTX-Video"
     _DEFAULT_CONFIG_URL = (
         "https://raw.githubusercontent.com/Lightricks/LTX-Video/refs/heads/main/"
-        "configs/ltxv-2b-0.9.6-distilled.yaml"
+        "configs/ltxv-2b-0.9.6-dev.yaml"
     )
 
     def __init__(self, model_root: Path, device_preference: str = "auto") -> None:
