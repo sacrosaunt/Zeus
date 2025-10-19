@@ -2,10 +2,11 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
-from importlib.resources import files as pkg_files
-from pathlib import Path
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 import imageio.v2 as imageio
 import numpy as np
@@ -114,6 +115,12 @@ class LTXVideoRunner:
     """Minimal wrapper around the official LTX-Video pipeline."""
 
     _NEGATIVE_PROMPT = "worst quality, inconsistent motion, blurry, jittery, distorted"
+    _DEFAULT_CONFIG_FILENAME = "ltxv-2b-0.9.6-distilled.yaml"
+    _HUB_REPO_ID = "Lightricks/LTX-Video"
+    _DEFAULT_CONFIG_URL = (
+        "https://raw.githubusercontent.com/Lightricks/LTX-Video/refs/heads/main/"
+        "configs/ltxv-2b-0.9.6-distilled.yaml"
+    )
 
     def __init__(self, model_root: Path, device_preference: str = "auto") -> None:
         self.model_root = model_root
@@ -131,7 +138,7 @@ class LTXVideoRunner:
         if not checkpoint_path.exists():
             LOGGER.info("Checkpoint %s missing; downloading from hub", checkpoint_name)
             downloaded = hf_hub_download(
-                repo_id="Lightricks/LTX-Video",
+                repo_id=self._HUB_REPO_ID,
                 filename=checkpoint_name,
                 repo_type="model",
                 local_dir=str(self.model_root),
@@ -238,11 +245,21 @@ class LTXVideoRunner:
                 if files:
                     return str(files[0])
 
-        LOGGER.info("Pipeline config not found locally; installing packaged default")
-        packaged = pkg_files("ltx_video").joinpath("configs", "ltxv-2b-0.9.6-distilled.yaml")
-        target = self.model_root / "configs" / "ltxv-2b-0.9.6-distilled.yaml"
+        LOGGER.info(
+            "Pipeline config not found locally; downloading from %s",
+            self._DEFAULT_CONFIG_URL,
+        )
+        target = configs_dir / self._DEFAULT_CONFIG_FILENAME
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(packaged.read_bytes())
+        try:
+            with urlopen(self._DEFAULT_CONFIG_URL) as response:
+                data = response.read()
+        except (HTTPError, URLError) as exc:
+            raise FileNotFoundError(
+                f"Unable to download pipeline config from {self._DEFAULT_CONFIG_URL}"
+            ) from exc
+
+        target.write_bytes(data)
         return str(target)
 
     @staticmethod
