@@ -1,7 +1,7 @@
 redis>=5.0,<6.0
 numpy>=1.23,<2.0
 imageio[ffmpeg]>=2.34,<3.0
-huggingface_hub>=0.30,<0.31
+huggingface_hub[hf_xet]>=0.30,<0.31
 diffusers>=0.32,<0.34
 accelerate>=0.31,<0.32
 transformers>=4.47,<4.52
