@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 
-REPO_ID = "Lightricks/LTX-Video-0.9.8-13B-distilled"
-LOCAL_DIR = "models/ltx-video-0.9.8-13b-distilled"
+REPO_ID = "Lightricks/ltxv-2b-0.9.6-distilled"
+LOCAL_DIR = "models/ltxv-2b-0.9.6-distilled"
 
 
 def main() -> int:
