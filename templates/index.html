@@ -681,7 +681,7 @@
           action.className = "history-play";
           action.dataset.jobId = entry.jobId;
           action.dataset.prompt = entry.prompt;
-          action.textContent = "Replay";
+          action.textContent = "Play";
           item.appendChild(action);
 
           if (hasCachedVideo(entry.jobId)) {
@@ -700,7 +700,7 @@
       }
 
     async function fetchVideo(jobId) {
-      const res = await fetch(`/files/${jobId}/out.mp4`);
+      const res = await fetch(`/generated/${jobId}/out.mp4`);
       if (!res.ok) {
         return null;
       }

@@ -18,7 +18,8 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 - Open a browser to `http://<host-ip>/` (replace `<host-ip>` with the VM address). The Caddy proxy fans out requests across the Flask instances.
 - The frontend becomes available even before the entire app has finished building, but will not allow you to submit inference requests until build is complete.
 - Submit a prompt from the UI. Jobs are queued in Redis until the inference container is ready.
-- Generated videos are written to `generated/<job-id>/out.mp4`; these files are exposed through the `/files/<job_id>/out.mp4` endpoint if you need direct downloads.
+- Generated videos are written to `generated/<job-id>/out.mp4`; these files are exposed through the `/generated/<job_id>/out.mp4` endpoint if you need direct downloads.
+- The frontend automatically retrieves the generated video and plays it. Past generations are also available for replay and download.
 
 ## Managing The Deployment
 - `docker compose logs -f inference` tails the inference worker if you need to diagnose GPU or model issues.

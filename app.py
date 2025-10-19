@@ -129,7 +129,7 @@ def create_app() -> Flask:
 
         return jsonify(response), 200
 
-    @app.get("/files/<job_id>/out.mp4")
+    @app.get("/generated/<job_id>/out.mp4")
     def get_job_output(job_id: str):
         """Return generated video file."""
         # prevent traversal
