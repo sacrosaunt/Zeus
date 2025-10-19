@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-REPO_ID = "Lightricks/ltxv-2b-0.9.6-distilled"
+REPO_ID = "Lightricks/LTX-Video"
 LOCAL_DIR = "models/ltxv-2b-0.9.6-distilled"
 
 
@@ -21,11 +21,11 @@ def main() -> int:
         "scheduler/*",
         "tokenizer/*",
         "text_encoder/*",
-        "transformer/*",
+        "transformer/config.json",
         "vae/*",
         "*.txt",
         "*.py",
-        "*.safetensors",
+        "ltxv-2b-0.9.6-distilled*.safetensors",
     ]
 
     snapshot_download(
@@ -33,6 +33,20 @@ def main() -> int:
         local_dir=str(destination),
         allow_patterns=allow_patterns,
     )
+
+    weight_name = "ltxv-2b-0.9.6-distilled-04-25.safetensors"
+    weight_file = destination / weight_name
+    transformer_dir = destination / "transformer"
+    transformer_dir.mkdir(parents=True, exist_ok=True)
+    target_weight = transformer_dir / "diffusion_pytorch_model.safetensors"
+
+    if weight_file.exists():
+        # ensure the 2B weights sit where diffusers expects them.
+        if target_weight.exists():
+            target_weight.unlink()
+        weight_file.replace(target_weight)
+    else:
+        print(f"Warning: expected weight file {weight_name} missing in snapshot.")
 
     print(f"Model synchronized to {destination}")
     return 0

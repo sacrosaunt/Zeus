@@ -1,6 +1,6 @@
 # Zeus
 
-Zeus provides a Docker-based deployment that serves a web UI for generating videos with the `ltxv-2b-0.9.6-distilled` model. The stack includes a Flask frontend behind Caddy, a Redis-backed job queue, and a GPU-powered inference worker that pulls prompts from the queue.
+Zeus provides a Docker-based deployment that serves a web UI for generating videos with the `ltxv-2b-0.9.6-distilled` weights from the `Lightricks/LTX-Video` repository. The stack includes a Flask frontend behind Caddy, a Redis-backed job queue, and a GPU-powered inference worker that pulls prompts from the queue.
 
 ## Prerequisites
 - Python 3.9+ (to run `deploy.py`)
@@ -10,7 +10,7 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 
 ## Quick Start
 - Clone this repository onto the target machine and move into the project root.
-- Run `python deploy.py`. The helper script builds all containers, starts Redis, the web server, and the inference worker, and downloads the `ltxv-2b-0.9.6-distilled` weights into `models/ltxv-2b-0.9.6-distilled/` if they are missing. The model sync may take a while depending on internet speed.
+- Run `python deploy.py`. The helper script builds all containers, starts Redis, the web server, and the inference worker, and downloads the `ltxv-2b-0.9.6-distilled` weights into `models/ltxv-2b-0.9.6-distilled/` from `Lightricks/LTX-Video` if they are missing. The model sync may take a while depending on internet speed.
 - Monitor the console output. Once you see “Deployment complete.” the stack is up. You can confirm with `docker compose ps`.
 - Stream container logs with `docker compose logs -f`.
 
