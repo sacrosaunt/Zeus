@@ -174,6 +174,7 @@ class LTXVideoRunner:
         """Generate a video for the given prompt and persist it to disk."""
         steps = num_inference_steps or self._default_steps
         total_steps = max(1, steps)
+        using_default_steps = steps == self._default_steps
         seed = int(time.time() * 1000) & 0xFFFFFFFF
         seed_everething(seed)
         generator = torch.Generator(device=self.device).manual_seed(seed)
@@ -210,10 +211,18 @@ class LTXVideoRunner:
         }
         if progress_callback is not None:
             call_kwargs["callback_on_step_end"] = _on_step
-        if self._decode_timestep is not None:
+        if using_default_steps and self._decode_timestep is not None:
             call_kwargs["decode_timestep"] = self._decode_timestep
-        if self._decode_noise_scale is not None:
+        if using_default_steps and self._decode_noise_scale is not None:
             call_kwargs["decode_noise_scale"] = self._decode_noise_scale
+        if not using_default_steps and (
+            self._decode_timestep is not None or self._decode_noise_scale is not None
+        ):
+            LOGGER.debug(
+                "Skipping decode tuning parameters for %s inference steps (default %s).",
+                steps,
+                self._default_steps,
+            )
 
         outputs = self.pipeline(**call_kwargs)
         images = outputs.images
