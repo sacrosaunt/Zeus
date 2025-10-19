@@ -2,38 +2,62 @@
 """Utility to materialize a Hugging Face model repository locally."""
 
 from __future__ import annotations
+
+import argparse
 from pathlib import Path
 
 
-REPO_ID = "Lightricks/LTX-Video"
-LOCAL_DIR = "models/ltxv-2b-0.9.6-distilled"
+DEFAULT_REPO_ID = "Lightricks/LTX-Video"
+DEFAULT_LOCAL_DIR = "models/ltxv-2b-0.9.6-distilled"
+DEFAULT_CHECKPOINT = "ltxv-2b-0.9.6-distilled-04-25.safetensors"
+
+ALLOW_PATTERNS: list[str] = [
+    "model_index.json",
+    "configs/ltxv-2b-0.9.6-distilled.yaml",
+    "*.txt",
+    "*.py",
+    "*.md",
+    "ltxv-2b-0.9.6-distilled*.safetensors",
+]
 
 
-def main() -> int:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--repo-id",
+        default=DEFAULT_REPO_ID,
+        help="Hugging Face repository identifier (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--local-dir",
+        default=DEFAULT_LOCAL_DIR,
+        help="Destination directory for model assets (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default=DEFAULT_CHECKPOINT,
+        help="Specific checkpoint filename to ensure is downloaded (default: %(default)s)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     from huggingface_hub import hf_hub_download, snapshot_download
 
-    destination = Path(LOCAL_DIR).expanduser().resolve()
+    args = _parse_args(argv)
+
+    destination = Path(args.local_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
 
-    # Pull only the pieces needed by the official LTX-Video runner.
-    allow_patterns: list[str] = [
-        "model_index.json",
-        "configs/ltxv-2b-0.9.6-distilled.yaml",
-        "*.txt",
-        "*.py",
-        "*.md",
-        "ltxv-2b-0.9.6-distilled*.safetensors",
-    ]
-
     snapshot_download(
-        repo_id=REPO_ID,
+        repo_id=args.repo_id,
         local_dir=str(destination),
-        allow_patterns=allow_patterns,
+        allow_patterns=ALLOW_PATTERNS,
     )
 
     hf_hub_download(
-        repo_id=REPO_ID,
-        filename="ltxv-2b-0.9.6-distilled-04-25.safetensors",
+        repo_id=args.repo_id,
+        filename=args.checkpoint,
         repo_type="model",
         local_dir=str(destination),
         local_dir_use_symlinks=False,

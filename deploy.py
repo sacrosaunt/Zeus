@@ -15,6 +15,8 @@ READY_FLAG = STATUS_DIR / ".server_ready"
 BUILDING_FLAG = STATUS_DIR / ".server_building"
 LEGACY_READY_FLAG = STATUS_DIR / ".model_ready"
 LEGACY_DOWNLOADING_FLAG = STATUS_DIR / ".model_downloading"
+CHECKPOINT_FILENAME = "ltxv-2b-0.9.6-distilled-04-25.safetensors"
+REPO_ID = "Lightricks/LTX-Video"
 
 
 def run_command(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -60,10 +62,22 @@ def start_inference_service() -> None:
     run_command(["docker", "compose", "up", "--build", "-d", "inference"])
 
 
-def download_model() -> None:
+def download_model(refresh: bool) -> None:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Model snapshot missing; downloading to {MODEL_DIR}")
-    run_command([sys.executable, "scripts/download_model.py", "--local-dir", str(MODEL_DIR)])
+    verb = "Refreshing" if refresh else "Downloading"
+    print(f"{verb} model assets at {MODEL_DIR}")
+    run_command(
+        [
+            sys.executable,
+            "scripts/download_model.py",
+            "--repo-id",
+            REPO_ID,
+            "--local-dir",
+            str(MODEL_DIR),
+            "--checkpoint",
+            CHECKPOINT_FILENAME,
+        ]
+    )
 
 
 def show_status() -> None:
@@ -75,15 +89,14 @@ def main() -> int:
 
     already_present = model_present()
     if already_present:
-        print(f"Model already present at {MODEL_DIR}")
+        print(f"Model already present at {MODEL_DIR}; ensuring required files are up to date.")
     else:
         print("Model assets not found; preparing to download.")
 
     try:
         start_core_services()
 
-        if not already_present:
-            download_model()
+        download_model(refresh=already_present)
 
         start_inference_service()
     except subprocess.CalledProcessError as exc:
