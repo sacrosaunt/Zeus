@@ -14,6 +14,15 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 - Monitor the console output. Once you see “Deployment complete.” the stack is up. You can confirm with `docker compose ps`.
 - Stream container logs with `docker compose logs -f`.
 
+## Architecture
+- Caddy terminates HTTP on port 80 and load balances requests (least connections) across three identical Flask containers (`app1`, `app2`, `app3`).
+- The Flask apps enqueue prompts into Redis, which acts as the central job queue and status store.
+- A GPU-enabled inference worker consumes jobs from Redis, runs the LTX-Video model, and writes outputs to the shared `generated/` volume that the apps serve back to users.
+- Persistent assets such as model weights live under `models/`, mounted read-only into the app containers and read/write into the inference container.
+- The diagram below illustrates the components and their relationships:
+
+<img src="Zeus%20System%20Design%20Cropped.png" alt="Zeus system architecture diagram" width="640" />
+
 ## Using The App
 - Open a browser to `http://<host-ip>/` (replace `<host-ip>` with the VM address). The Caddy proxy fans out requests across the Flask instances.
 - The frontend becomes available even before the entire app has finished building, but will not allow you to submit inference requests until build is complete.
