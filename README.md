@@ -37,5 +37,7 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 ## Performance Optimizations
 - Caddy uses `least_conn` load balancing, directing incoming requests to the Flask replica with the fewest active connections to maintain stable latency under load.
 - Redis backs the queue and status hashes; its in-memory design delivers sub-millisecond writes/reads, and the simple KV store fit the project's lightweight data model.
-- Potential future optimization: store generated videos in a database or object storage service for faster retrieval, easy replication, and more complex operations.
+- Potential future optimizations:
+    - Store generated videos in a database or object storage service for faster retrieval, easy replication, and more complex operations.
+    - Add a TTL for generated video files to save storage
 - Considered partitioning the GPU (MIG) to run multiple generations simultaneously, but ruled it out: splitting the single GPU would throttle per-job compute and produce longer average inference times, which runs counter to the goals of a fast, demo-friendly deployment.
