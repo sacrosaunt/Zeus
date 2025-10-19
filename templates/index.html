@@ -349,14 +349,12 @@
       const historyEmptyState = document.getElementById("history-empty");
       const serverStatusMessage = document.getElementById("model-status-message");
       const HISTORY_STORAGE_KEY = "zeus-history";
-      const HISTORY_VIDEO_KEY = "zeus-history-videos";
       const DB_NAME = "zeus-video-cache";
       const DB_STORE = "videos";
 
       let pollTimer = null;
       let activeJobId = null;
       let lastSubmittedPrompt = "";
-      let lastHandledBy = "";
       let historyEntries = [];
       let videoCache = new Map();
       let cachedVideoIds = new Set();
@@ -375,8 +373,56 @@
         return "";
       }
 
+      function formatStatus(message, ...handlers) {
+        const handler = resolveHandler(...handlers);
+        return handler ? `${message} • served by ${handler}` : message;
+      }
+
+      function supportsLocalStorage() {
+        return "localStorage" in window;
+      }
+
+      function readJsonStorage(key, fallback) {
+        if (!supportsLocalStorage()) {
+          return fallback;
+        }
+
+        try {
+          const raw = window.localStorage.getItem(key);
+          if (!raw) {
+            return fallback;
+          }
+
+          const parsed = JSON.parse(raw);
+          return parsed ?? fallback;
+        } catch {
+          return fallback;
+        }
+      }
+
+      function writeJsonStorage(key, value) {
+        if (!supportsLocalStorage()) {
+          return;
+        }
+
+        try {
+          window.localStorage.setItem(key, JSON.stringify(value));
+        } catch {
+          // Ignore storage errors (e.g. quota exceeded)
+        }
+      }
+
+      function getJobHandler(jobId) {
+        if (!jobId || !jobMeta.has(jobId)) {
+          return "";
+        }
+
+        return resolveHandler(jobMeta.get(jobId)?.handledBy);
+      }
+
       initializeHistory();
       startServerStatusWatcher();
+      syncCachedVideoIds();
 
       if (historyList) {
         historyList.addEventListener("click", (event) => {
@@ -441,12 +487,13 @@
 
           const { job_id: jobId, handled_by: handledBy } = await res.json();
           activeJobId = jobId;
-          const handler = handledBy || "unknown";
-          jobMeta.set(jobId, { handledBy: handler });
-          lastHandledBy = handler;
-          const queuedMessage =
-            handler && handler !== "unknown" ? `queued • served by ${handler}` : "queued";
-          updateStatus(queuedMessage, 0);
+          const handler = resolveHandler(handledBy);
+          if (handler) {
+            jobMeta.set(jobId, { handledBy: handler });
+          } else {
+            jobMeta.delete(jobId);
+          }
+          updateStatus(formatStatus("queued", handler), 0);
           pollTimer = window.setInterval(() => pollStatus(jobId), 1500);
         } catch (err) {
           updateStatus(err.message || "Failed to start generation.", null, true);
@@ -483,31 +530,32 @@
           }
 
           const { status, percent_complete: percent, handled_by: handledBy } = await res.json();
-          if (handledBy) {
-            jobMeta.set(jobId, { handledBy });
-            lastHandledBy = handledBy;
-          } else if (!jobMeta.has(jobId)) {
-            // keep the map empty so we can fill it later if a handler arrives
+          const candidateHandler = resolveHandler(handledBy, getJobHandler(jobId));
+          if (candidateHandler) {
+            jobMeta.set(jobId, { handledBy: candidateHandler });
+          } else if (handledBy === "unknown") {
+            jobMeta.delete(jobId);
           }
 
+          const handler = candidateHandler;
+
           if (status === "completed") {
-            const handler = jobMeta.get(jobId)?.handledBy || lastHandledBy || "";
-            const statusMessage =
-              handler && handler !== "unknown" ? `completed • served by ${handler}` : "completed";
+            const statusMessage = formatStatus("completed", handler);
             await loadVideo(jobId, { statusMessage });
             registerHistory(jobId, lastSubmittedPrompt, handler);
             clearPoll();
             setLoading(false);
             jobMeta.delete(jobId);
-          } else if (status === "failed") {
+            return;
+          }
+
+          if (status === "failed") {
             clearPoll();
             setLoading(false);
+            jobMeta.delete(jobId);
           }
-          if (status !== "completed") {
-            const statusMessage =
-              handledBy && handledBy !== "unknown" ? `${status} • served by ${handledBy}` : status;
-            updateStatus(statusMessage, percent ?? null);
-          }
+
+          updateStatus(formatStatus(status, handler), percent ?? null);
         } catch (err) {
           clearPoll();
           setLoading(false);
@@ -603,7 +651,7 @@
 
       function initializeHistory() {
         historyEntries = loadStoredHistory();
-        cachedVideoIds = loadStoredVideoIds();
+        cachedVideoIds = new Set();
         renderHistory();
       }
 
@@ -624,8 +672,7 @@
         clearActiveVideo();
         setLoading(true);
         const entry = historyEntries.find((item) => item.jobId === jobId);
-        const handledBy = resolveHandler(entry?.handledBy, entry?.servedBy);
-        const statusMessage = handledBy ? `completed • served by ${handledBy}` : "completed";
+        const statusMessage = formatStatus("completed", entry?.handledBy, entry?.servedBy);
         loadVideo(jobId, {
           fromCache: true,
           statusMessage,
@@ -741,7 +788,6 @@
       const url = URL.createObjectURL(blob);
       videoCache.set(jobId, { url, size: blob.size ?? 0 });
       cachedVideoIds.add(jobId);
-      saveStoredVideoIds();
 
       if (!skipDb) {
         try {
@@ -771,7 +817,7 @@
       });
 
       cachedVideoIds = new Set(Array.from(cachedVideoIds).filter((id) => validIds.has(id)));
-      saveStoredVideoIds();
+      cleanupVideoStorage(validIds);
     }
 
     function setActiveVideo(jobId, url) {
@@ -841,40 +887,6 @@
       return videoCache.has(jobId) || cachedVideoIds.has(jobId);
     }
 
-    function loadStoredVideoIds() {
-      if (!("localStorage" in window)) {
-        return new Set();
-      }
-
-      try {
-        const raw = window.localStorage.getItem(HISTORY_VIDEO_KEY);
-        if (!raw) {
-          return new Set();
-        }
-
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) {
-          return new Set();
-        }
-
-        return new Set(parsed.filter((id) => typeof id === "string" && id.length > 0));
-      } catch {
-        return new Set();
-      }
-    }
-
-    function saveStoredVideoIds() {
-      if (!("localStorage" in window)) {
-        return;
-      }
-
-      try {
-        window.localStorage.setItem(HISTORY_VIDEO_KEY, JSON.stringify(Array.from(cachedVideoIds)));
-      } catch {
-        // ignore storage errors
-      }
-    }
-
     async function getVideoDb() {
       if (!("indexedDB" in window)) {
         return null;
@@ -922,58 +934,116 @@
       });
     }
 
-    function loadStoredHistory() {
-      if (!("localStorage" in window)) {
-        return [];
-      }
-
+    async function syncCachedVideoIds() {
       try {
-        const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
-        if (!raw) {
-          return [];
-        }
-
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) {
-          return [];
-        }
-
-        return parsed
-          .filter(
-            (entry) =>
-              entry &&
-              typeof entry === "object" &&
-              typeof entry.jobId === "string" &&
-              entry.jobId.length > 0 &&
-              typeof entry.prompt === "string"
-          )
-          .map((entry) => {
-            const base = {
-              jobId: entry.jobId,
-              prompt: entry.prompt,
-              createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
-            };
-            const handledBy = resolveHandler(entry.handledBy, entry.servedBy, entry.handled_by);
-            if (handledBy) {
-              base.handledBy = handledBy;
-            }
-            return base;
-          });
-      } catch {
-        return [];
+        const ids = await listStoredVideoIds();
+        cachedVideoIds = new Set(
+          ids.filter((id) => typeof id === "string" && id.length > 0)
+        );
+        renderHistory();
+      } catch (err) {
+        console.warn("Failed to load cached video ids", err);
       }
     }
 
-      function saveHistory() {
-        if (!("localStorage" in window)) {
+    async function listStoredVideoIds(dbInstance = null) {
+      const db = dbInstance ?? (await getVideoDb());
+      if (!db) {
+        return [];
+      }
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readonly");
+        const store = tx.objectStore(DB_STORE);
+
+        if (typeof store.getAllKeys === "function") {
+          const request = store.getAllKeys();
+          request.onsuccess = () => resolve(request.result ?? []);
+          request.onerror = () =>
+            reject(request.error ?? new Error("Failed to read cached video ids"));
           return;
         }
 
-        try {
-          window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyEntries));
-        } catch {
-          // Ignore storage errors (e.g. quota exceeded)
+        const ids = [];
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            ids.push(cursor.key);
+            cursor.continue();
+          } else {
+            resolve(ids);
+          }
+        };
+        request.onerror = () =>
+          reject(request.error ?? new Error("Failed to read cached video ids"));
+      });
+    }
+
+    async function cleanupVideoStorage(validIds) {
+      try {
+        const db = await getVideoDb();
+        if (!db) {
+          return;
         }
+
+        const ids = await listStoredVideoIds(db);
+        const staleIds = ids.filter((id) => !validIds.has(id));
+        if (staleIds.length === 0) {
+          return;
+        }
+
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, "readwrite");
+          const store = tx.objectStore(DB_STORE);
+
+          staleIds.forEach((id) => {
+            try {
+              store.delete(id);
+            } catch (error) {
+              console.warn(`Failed to schedule deletion for video ${id}`, error);
+            }
+          });
+
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error ?? new Error("Failed to prune video cache"));
+        });
+      } catch (err) {
+        console.warn("Failed to prune persisted video cache", err);
+      }
+    }
+
+    function loadStoredHistory() {
+      const stored = readJsonStorage(HISTORY_STORAGE_KEY, []);
+      if (!Array.isArray(stored)) {
+        return [];
+      }
+
+      return stored
+        .filter(
+          (entry) =>
+            entry &&
+            typeof entry === "object" &&
+            typeof entry.jobId === "string" &&
+            entry.jobId.length > 0 &&
+            typeof entry.prompt === "string"
+        )
+        .map((entry) => {
+          const base = {
+            jobId: entry.jobId,
+            prompt: entry.prompt,
+            createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
+          };
+          const handledBy = resolveHandler(entry.handledBy, entry.servedBy, entry.handled_by);
+          if (handledBy) {
+            base.handledBy = handledBy;
+          }
+          return base;
+        });
+    }
+
+      function saveHistory() {
+        writeJsonStorage(HISTORY_STORAGE_KEY, historyEntries);
       }
 
       function formatTimestamp(value) {

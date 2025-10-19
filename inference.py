@@ -96,7 +96,7 @@ def load_config() -> WorkerConfig:
 
 
 class LTXVideoModel:
-    """Thin wrapper around the LTXV diffusion pipeline."""
+    """Wrapper around the LTXV diffusion pipeline."""
 
     def __init__(self, model_id: str, device_preference: str = "auto"):
         import torch
