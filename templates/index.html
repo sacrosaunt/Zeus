@@ -439,16 +439,9 @@
             throw new Error(payload?.error ?? `Request failed (${res.status})`);
           }
 
-          const creationPayload = await res.json();
-          console.log("[Zeus] /api/generate response:", creationPayload);
-          const { job_id: jobId, handled_by: handledBy } = creationPayload;
+          const { job_id: jobId, handled_by: handledBy } = await res.json();
           activeJobId = jobId;
           const handler = handledBy || "unknown";
-          if (handledBy) {
-            console.log(`[Zeus] Job ${jobId} handled by ${handledBy}`);
-          } else {
-            console.log(`[Zeus] Job ${jobId} did not report a handler (defaulting to unknown).`);
-          }
           jobMeta.set(jobId, { handledBy: handler });
           lastHandledBy = handler;
           const queuedMessage =
@@ -489,15 +482,12 @@
             throw new Error(payload?.error ?? `Status check failed (${res.status})`);
           }
 
-          const payload = await res.json();
-          console.log("[Zeus] /api/jobs response:", jobId, payload);
-          const { status, percent_complete: percent, handled_by: handledBy } = payload;
+          const { status, percent_complete: percent, handled_by: handledBy } = await res.json();
           if (handledBy) {
-            console.log(`[Zeus] Poll job ${jobId}: handled by ${handledBy}`);
             jobMeta.set(jobId, { handledBy });
             lastHandledBy = handledBy;
           } else if (!jobMeta.has(jobId)) {
-            console.log(`[Zeus] Poll job ${jobId}: no handler reported.`);
+            // keep the map empty so we can fill it later if a handler arrives
           }
 
           if (status === "completed") {
