@@ -239,7 +239,7 @@ class LTXVideoRunner:
                     return str(files[0])
 
         LOGGER.info("Pipeline config not found locally; installing packaged default")
-        packaged = pkg_files("ltx_video.configs").joinpath("ltxv-2b-0.9.6-distilled.yaml")
+        packaged = pkg_files("ltx_video").joinpath("configs", "ltxv-2b-0.9.6-distilled.yaml")
         target = self.model_root / "configs" / "ltxv-2b-0.9.6-distilled.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(packaged.read_bytes())
