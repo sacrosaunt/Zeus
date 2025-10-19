@@ -4,7 +4,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from redis import Redis
@@ -168,7 +168,7 @@ def frames_to_video(frames: Sequence, output_path: Path, fps: int) -> None:
     import imageio.v2 as imageio
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    arrays: List[np.ndarray] = []
+    arrays: list[np.ndarray] = []
 
     def _finalize(array: np.ndarray, outer_index: int, inner_index: int | None = None) -> np.ndarray:
         origin = f"{outer_index}" if inner_index is None else f"{outer_index}:{inner_index}"
@@ -193,7 +193,7 @@ def frames_to_video(frames: Sequence, output_path: Path, fps: int) -> None:
         else:
             array = np.asarray(frame)
         if array.ndim == 4:
-            slices: List[np.ndarray]
+            slices: list[np.ndarray]
             if array.shape[0] == 1:
                 slices = [array[0]]
             elif array.shape[-1] in (1, 2, 3, 4):
@@ -231,7 +231,7 @@ class InferenceWorker:
             except KeyboardInterrupt:
                 LOGGER.info("Inference worker interrupted; shutting down.")
                 break
-            except Exception:  # pragma: no cover - runtime guard
+            except Exception:
                 LOGGER.exception("Unhandled exception in worker loop; continuing in 5 seconds.")
                 time.sleep(5)
 
@@ -286,7 +286,7 @@ class InferenceWorker:
             frames_to_video(frames, output_path, fps=self.config.fps)
             self._set_status(job_id, "completed", 100)
             LOGGER.info("Job %s completed successfully.", job_id)
-        except Exception as exc:
+        except Exception:
             self._set_status(job_id, "failed", min(100, last_percent))
             LOGGER.exception("Job %s failed during inference.", job_id)
 
