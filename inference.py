@@ -140,6 +140,16 @@ class LTXVideoRunner:
         LOGGER.info("Configured checkpoint identifier: %s", raw_checkpoint)
         LOGGER.info("Expecting checkpoint at %s", expected_path)
         if not expected_path.exists():
+            try:
+                expected_path.stat()
+            except OSError as exc:
+                LOGGER.warning("Stat on checkpoint path failed: %s", exc)
+            try:
+                contents = ", ".join(sorted(entry.name for entry in self.model_root.iterdir()))
+            except OSError as exc:
+                LOGGER.warning("Unable to list model root %s: %s", self.model_root, exc)
+            else:
+                LOGGER.info("Contents of model root: %s", contents or "<empty>")
             LOGGER.info("Checkpoint %s missing; downloading from hub", checkpoint_name)
             downloaded = hf_hub_download(
                 repo_id=self._HUB_REPO_ID,
