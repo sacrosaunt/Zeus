@@ -5,8 +5,10 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 ## Prerequisites
 - Python 3.9+ (to run `deploy.py`)
 - Docker and Docker Compose v2
-- NVIDIA GPU drivers and NVIDIA Container Toolkit on the host (the inference service defaults to `LTX_DEVICE=cuda`)
+- NVIDIA GPU with drivers that support CUDA 12.1 (driver version 531.14+ recommended) and an installed NVIDIA Container Toolkit; the inference image is `pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime`, so `nvidia-smi` must succeed on the host and from `docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu20.04 nvidia-smi` before deploying
 - Outbound network access for the initial model download
+
+If you have never run GPU workloads in Docker on the target machine, follow the [NVIDIA Container Toolkit setup guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) to install the toolkit and set Docker's default runtime to `nvidia`. Without these prerequisites the inference worker will crash at startup with `CUDA driver` or `RuntimeError: CUDA error` messages.
 
 ## Quick Start
 - Clone this repository onto the target machine and move into the project root.
@@ -25,7 +27,7 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 <img src="Zeus%20System%20Design%20Cropped.png" alt="Zeus system architecture diagram" width="640" />
 
 ## Using The App
-- Open a browser to `http://<host-ip>/` (replace `<host-ip>` with the VM address). The Caddy proxy fans out requests across the Flask instances.
+- Open a browser to `http://<vm-ip-address>/`. The Caddy proxy fans out requests across the Flask instances.
 - The frontend becomes available even before the entire app has finished building, but will not allow you to submit inference requests until build is complete.
 - Submit a prompt from the UI. Jobs are queued in Redis until the inference container is ready.
 - Generated videos are written to `generated/<job-id>/out.mp4`; these files are exposed through the `/generated/<job_id>/out.mp4` endpoint if you need direct downloads.
