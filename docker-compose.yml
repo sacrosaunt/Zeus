@@ -45,7 +45,7 @@ services:
       dockerfile: Dockerfile.inference
     environment:
       <<: *app-env
-      LTX_MODEL_ID: /models/LTX-Video
+      LTX_MODEL_ID: /models/ltxv-13b-0.9.8-mix
       LTX_DEVICE: cuda
       LTX_NUM_FRAMES: "121"
       LTX_OUTPUT_FPS: "24"

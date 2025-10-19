@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo-id",
-        default="Lightricks/LTX-Video",
+        default="Lightricks/ltxv-13b-0.9.8-mix",
         help="Model repository to download (default: %(default)s).",
     )
     parser.add_argument(
@@ -29,13 +29,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--local-dir",
-        default="models/LTX-Video",
+        default="models/ltxv-13b-0.9.8-mix",
         help="Destination directory for the model snapshot.",
     )
     parser.add_argument(
         "--weights-file",
         action="append",
-        default=["ltx-video-2b-v0.9.safetensors"],
+        default=None,
         help=(
             "Specific weight files to download. "
             "Provide multiple times to fetch more than one file."
@@ -65,13 +65,10 @@ def main() -> int:
     destination = Path(args.local_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
 
+    allow_patterns: list[str] = []
     if args.include_config:
-        snapshot_download(
-            repo_id=args.repo_id,
-            revision=args.revision,
-            local_dir=str(destination),
-            token=args.token,
-            allow_patterns=[
+        allow_patterns.extend(
+            [
                 "model_index.json",
                 "scheduler/*",
                 "tokenizer/*",
@@ -80,21 +77,32 @@ def main() -> int:
                 "vae/*",
                 "*.txt",
                 "*.py",
-            ],
+            ]
+        )
+
+    if not args.weights_file:
+        allow_patterns.append("*.safetensors")
+
+    if allow_patterns:
+        snapshot_download(
+            repo_id=args.repo_id,
+            revision=args.revision,
+            local_dir=str(destination),
+            token=args.token,
+            allow_patterns=allow_patterns,
         )
 
     weights = [w for w in (args.weights_file or []) if w]
-    if not weights:
-        print("No weights specified; nothing to download.")
-    for weight in weights:
-        print(f"Downloading weight file {weight}")
-        hf_hub_download(
-            repo_id=args.repo_id,
-            revision=args.revision,
-            filename=weight,
-            local_dir=str(destination),
-            token=args.token,
-        )
+    if weights:
+        for weight in weights:
+            print(f"Downloading weight file {weight}")
+            hf_hub_download(
+                repo_id=args.repo_id,
+                revision=args.revision,
+                filename=weight,
+                local_dir=str(destination),
+                token=args.token,
+            )
 
     print(f"Model synchronized to {destination}")
     return 0

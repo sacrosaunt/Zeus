@@ -96,7 +96,7 @@ def load_config() -> WorkerConfig:
 
 
 class LTXVideoModel:
-    """Thin wrapper around the LTX-Video diffusion pipeline."""
+    """Thin wrapper around the LTXV diffusion pipeline."""
 
     def __init__(self, model_id: str, device_preference: str = "auto"):
         import torch
@@ -108,7 +108,7 @@ class LTXVideoModel:
             device = device_preference
 
         dtype = torch.float16 if device.startswith("cuda") else torch.float32
-        LOGGER.info("Loading LTX-Video model %s on %s", model_id, device)
+        LOGGER.info("Loading LTXV model %s on %s", model_id, device)
         self.pipeline = DiffusionPipeline.from_pretrained(
             model_id,
             torch_dtype=dtype,
