@@ -494,7 +494,7 @@
             jobMeta.delete(jobId);
           }
           updateStatus(formatStatus("queued", handler), 0);
-          pollTimer = window.setInterval(() => pollStatus(jobId), 1500);
+          pollTimer = window.setInterval(() => pollStatus(jobId), 3000);
         } catch (err) {
           updateStatus(err.message || "Failed to start generation.", null, true);
           setLoading(false);

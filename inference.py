@@ -210,11 +210,17 @@ class LTXVideoRunner:
 
         def _on_step(_pipe, step: int, _timestep, kwargs: dict) -> dict:
             nonlocal last_percent
-            if progress_callback is not None:
-                percent = min(99, int(((step + 1) * 100) / total_steps))
-                if percent != last_percent:
-                    last_percent = percent
-                    progress_callback(percent)
+            if progress_callback is None:
+                return kwargs
+
+            should_update = (step + 1) % 5 == 0 or (step + 1) == total_steps
+            if not should_update:
+                return kwargs
+
+            percent = min(99, int(((step + 1) * 100) / total_steps))
+            if percent != last_percent:
+                last_percent = percent
+                progress_callback(percent)
             return kwargs
 
         call_kwargs: dict[str, object] = {
