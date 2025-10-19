@@ -158,6 +158,9 @@ class LTXVideoRunner:
             device=self.device,
             enhance_prompt=False,
         )
+        allowed_attr = getattr(self.pipeline, "allowed_inference_steps", None)
+        allowed_steps = list(allowed_attr) if allowed_attr else None
+        self._allowed_step_count = len(allowed_steps) if allowed_steps else None
 
     def generate(
         self,
@@ -172,7 +175,15 @@ class LTXVideoRunner:
         progress_callback: Callable[[int], None] | None = None,
     ) -> None:
         """Generate a video for the given prompt and persist it to disk."""
-        steps = num_inference_steps or self._default_steps
+        requested_steps = num_inference_steps or self._default_steps
+        steps = requested_steps
+        if self._allowed_step_count is not None and steps != self._allowed_step_count:
+            LOGGER.warning(
+                "Requested %s inference steps, but pipeline allows %s; using allowed value.",
+                steps,
+                self._allowed_step_count,
+            )
+            steps = self._allowed_step_count
         total_steps = max(1, steps)
         using_default_steps = steps == self._default_steps
         seed = int(time.time() * 1000) & 0xFFFFFFFF
