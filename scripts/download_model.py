@@ -55,13 +55,15 @@ def main(argv: list[str] | None = None) -> int:
         allow_patterns=ALLOW_PATTERNS,
     )
 
-    hf_hub_download(
-        repo_id=args.repo_id,
-        filename=args.checkpoint,
-        repo_type="model",
-        local_dir=str(destination),
-        local_dir_use_symlinks=False,
-    )
+    checkpoint_path = destination / args.checkpoint
+    if not checkpoint_path.exists():
+        hf_hub_download(
+            repo_id=args.repo_id,
+            filename=args.checkpoint,
+            repo_type="model",
+            local_dir=str(destination),
+            local_dir_use_symlinks=False,
+        )
 
     print(f"Model synchronized to {destination}")
     return 0
