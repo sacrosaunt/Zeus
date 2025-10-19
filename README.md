@@ -32,4 +32,10 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 
 ## Managing The Deployment
 - `docker compose logs -f inference` tails the inference worker if you need to diagnose GPU or model issues.
-- `docker compose down` stops and removes the containers while keeping the `models/` and `generated/` volumes on disk for reuse.\
+- `docker compose down` stops and removes the containers while keeping the `models/` and `generated/` volumes on disk for reuse.
+
+## Performance Optimizations
+- Caddy uses `least_conn` load balancing, directing incoming requests to the Flask replica with the fewest active connections to maintain stable latency under load.
+- Redis backs the queue and status hashes; its in-memory design delivers sub-millisecond writes/reads, and the simple KV store fit the project's lightweight data model.
+- Potential future optimization: store generated videos in a database or object storage service for faster retrieval, easy replication, and more complex operations.
+- Considered partitioning the GPU (MIG) to run multiple generations simultaneously, but ruled it out: splitting the single GPU would throttle per-job compute and produce longer average inference times, which runs counter to the goals of a fast, demo-friendly deployment.
