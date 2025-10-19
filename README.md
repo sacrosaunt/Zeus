@@ -1,6 +1,6 @@
 # Zeus
 
-Zeus provides a Docker-based deployment that serves a web UI for generating videos with the `ltxv-13b-0.9.8-mix` model. The stack includes a Flask frontend behind Caddy, a Redis-backed job queue, and a GPU-powered inference worker that pulls prompts from the queue.
+Zeus provides a Docker-based deployment that serves a web UI for generating videos with the `LTX-Video-0.9.8-13B-distilled` model. The stack includes a Flask frontend behind Caddy, a Redis-backed job queue, and a GPU-powered inference worker that pulls prompts from the queue.
 
 ## Prerequisites
 - Python 3.9+ (to run `deploy.py`)
@@ -10,14 +10,14 @@ Zeus provides a Docker-based deployment that serves a web UI for generating vide
 
 ## Quick Start
 - Clone this repository onto the target machine and move into the project root.
-- Run `python deploy.py`. The helper script builds all containers, starts Redis, the web server, and the inference worker, and downloads the `ltxv-13b-0.9.8-mix` weights into `models/ltxv-13b-0.9.8-mix/` if they are missing. The model sync may take a while depending on internet speed.
+- Run `python deploy.py`. The helper script builds all containers, starts Redis, the web server, and the inference worker, and downloads the `LTX-Video-0.9.8-13B-distilled` weights into `models/ltx-video-0.9.8-13b-distilled/` if they are missing. The model sync may take a while depending on internet speed.
 - Monitor the console output. Once you see “Deployment complete.” the stack is up. You can confirm with `docker compose ps`.
 - Stream container logs with `docker compose logs -f`.
 
 ## Architecture
 - Caddy terminates HTTP on port 80 and load balances requests (least connections) across three identical Flask containers (`app1`, `app2`, `app3`).
 - The Flask apps enqueue prompts into Redis, which acts as the central job queue and status store.
-- A GPU-enabled inference worker consumes jobs from Redis, runs the `ltxv-13b-0.9.8-mix` model, and writes outputs to the shared `generated/` volume that the apps serve back to users.
+- A GPU-enabled inference worker consumes jobs from Redis, runs the `LTX-Video-0.9.8-13B-distilled` model, and writes outputs to the shared `generated/` volume that the apps serve back to users.
 - Persistent assets such as model weights live under `models/`, mounted read-only into the app containers and read/write into the inference container.
 - The diagram below illustrates the components and their relationships:
 

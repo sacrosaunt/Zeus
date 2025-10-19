@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 
-REPO_ID = "Lightricks/ltxv-13b-0.9.8-mix"
-LOCAL_DIR = "models/ltxv-13b-0.9.8-mix"
+REPO_ID = "Lightricks/LTX-Video-0.9.8-13B-distilled"
+LOCAL_DIR = "models/ltx-video-0.9.8-13b-distilled"
 WEIGHTS: tuple[str, ...] | None = None
 INCLUDE_CONFIG = True
 
