@@ -119,7 +119,7 @@ class LTXVideoRunner:
         self.config_path = self._discover_config()
         self.device = self._resolve_device(device_preference)
 
-        config = load_pipeline_config(str(self.config_path))
+        config = load_pipeline_config(self.config_path)
         self._guidance_scale = config.get("guidance_scale", 1.0)
         self._default_steps = config.get("num_inference_steps", 8)
         self._decode_timestep = config.get("decode_timestep")
@@ -229,23 +229,16 @@ class LTXVideoRunner:
         if progress_callback is not None and last_percent < 99:
             progress_callback(99)
 
-    def _discover_config(self) -> Path:
+    def _discover_config(self) -> str:
         configs_dir = self.model_root / "configs"
         if configs_dir.is_dir():
             for pattern in ("*.yaml", "*.yml"):
                 files = sorted(configs_dir.glob(pattern))
                 if files:
-                    return files[0]
+                    return str(files[0])
 
-        LOGGER.info("Pipeline config not found locally; downloading from hub")
-        downloaded = hf_hub_download(
-            repo_id="Lightricks/LTX-Video",
-            filename="configs/ltxv-2b-0.9.6-distilled.yaml",
-            repo_type="model",
-            local_dir=str(self.model_root),
-            local_dir_use_symlinks=False,
-        )
-        return Path(downloaded)
+        LOGGER.info("Pipeline config not found locally; using packaged default")
+        return "configs/ltxv-2b-0.9.6-distilled.yaml"
 
     @staticmethod
     def _resolve_device(preference: str) -> str:

@@ -33,13 +33,6 @@ def main() -> int:
 
     hf_hub_download(
         repo_id=REPO_ID,
-        filename="configs/ltxv-2b-0.9.6-distilled.yaml",
-        repo_type="model",
-        local_dir=str(destination),
-        local_dir_use_symlinks=False,
-    )
-    hf_hub_download(
-        repo_id=REPO_ID,
         filename="ltxv-2b-0.9.6-distilled-04-25.safetensors",
         repo_type="model",
         local_dir=str(destination),
