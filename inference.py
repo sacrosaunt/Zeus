@@ -217,6 +217,7 @@ class InferenceWorker:
         self.config = config
         self.redis = Redis.from_url(config.redis_url, decode_responses=True)
         self.status_key = config.redis_status_key
+        self.metadata_key = f"{self.status_key}:metadata"
         self.model = LTXVideoModel(config.model_id, config.device)
 
     def run(self) -> None:
@@ -257,10 +258,13 @@ class InferenceWorker:
     def _process_job(self, job: dict) -> None:
         job_id = job["job_id"]
         prompt = job["prompt"]
+        handler = job.get("handled_by")
         output_path = self.config.generated_root / job_id / "out.mp4"
         last_percent = 0
         total_steps = max(1, self.config.inference_steps)
         try:
+            if handler:
+                self.redis.hset(self.metadata_key, job_id, handler)
             self._set_status(job_id, "running", 0)
 
             def progress_callback(step: int, timestep, latents) -> None:

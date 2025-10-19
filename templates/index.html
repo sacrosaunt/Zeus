@@ -433,6 +433,11 @@
           const { job_id: jobId, handled_by: handledBy } = await res.json();
           activeJobId = jobId;
           const handler = handledBy || "unknown";
+          if (handledBy) {
+            console.log(`[Zeus] Job ${jobId} initially handled by ${handledBy}`);
+          } else {
+            console.log(`[Zeus] Job ${jobId} did not report a handler (defaulting to unknown).`);
+          }
           jobMeta.set(jobId, { handledBy: handler });
           lastHandledBy = handler;
           updateStatus(`queued • served by ${handler}`, 0);
@@ -471,7 +476,15 @@
             throw new Error(payload?.error ?? `Status check failed (${res.status})`);
           }
 
-          const { status, percent_complete: percent } = await res.json();
+          const payload = await res.json();
+          const { status, percent_complete: percent, handled_by: handledBy } = payload;
+          if (handledBy) {
+            console.log(`[Zeus] Poll job ${jobId}: handled by ${handledBy}`);
+            jobMeta.set(jobId, { handledBy });
+            lastHandledBy = handledBy;
+          } else if (!jobMeta.has(jobId)) {
+            console.log(`[Zeus] Poll job ${jobId}: no handler reported.`);
+          }
 
           if (status === "completed") {
             const handler = jobMeta.get(jobId)?.handledBy || lastHandledBy || "";
