@@ -46,7 +46,7 @@ Queues a new generation job.
   }
   ```
 
-- The `handled_by` field echoes which Flask container received the request. This is to demonstrate Caddy `least_conn` load balancing.
+- The `handled_by` field echoes which Flask container served this particular response. This is useful for demonstrating Caddy `least_conn` load balancing across replicas.
 - `400 Bad Request` – missing or empty prompt.
 - `503 Service Unavailable` – model not ready. Response includes an error code and human-readable message.
 
@@ -71,11 +71,11 @@ Retrieves the latest status for a previously submitted job.
     "job_id": "8b4fbf9e-1e03-4e74-ae43-3ba0f6428b1e",
     "status": "running",
     "percent_complete": 63,
-    "handled_by": "app2"
+    "handled_by": "app3"
   }
   ```
 
-- As above, `handled_by` reflects the container name that initially queued the job.
+- `handled_by` reflects the container name that answered this poll request. Depending on the load-balancing decision, it may change between calls.
 - `404 Not Found` – unknown job id.
 
 ### GET `/files/<job_id>/out.mp4`

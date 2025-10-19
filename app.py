@@ -121,9 +121,9 @@ def create_app() -> Flask:
 
         response = {"job_id": job_id, "status": status}
 
-        handler = redis_client.hget(job_metadata_key, job_id)
-        if handler:
-            response["handled_by"] = handler
+        handler = app_instance
+        response["handled_by"] = handler
+        redis_client.hset(job_metadata_key, job_id, handler)
         if percent is not None:
             response["percent_complete"] = percent
 

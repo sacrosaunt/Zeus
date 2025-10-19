@@ -366,6 +366,15 @@
       let serverStatusTimer = null;
       const jobMeta = new Map();
 
+      function resolveHandler(...values) {
+        for (const value of values) {
+          if (typeof value === "string" && value && value !== "unknown") {
+            return value;
+          }
+        }
+        return "";
+      }
+
       initializeHistory();
       startServerStatusWatcher();
 
@@ -430,17 +439,21 @@
             throw new Error(payload?.error ?? `Request failed (${res.status})`);
           }
 
-          const { job_id: jobId, handled_by: handledBy } = await res.json();
+          const creationPayload = await res.json();
+          console.log("[Zeus] /api/generate response:", creationPayload);
+          const { job_id: jobId, handled_by: handledBy } = creationPayload;
           activeJobId = jobId;
           const handler = handledBy || "unknown";
           if (handledBy) {
-            console.log(`[Zeus] Job ${jobId} initially handled by ${handledBy}`);
+            console.log(`[Zeus] Job ${jobId} handled by ${handledBy}`);
           } else {
             console.log(`[Zeus] Job ${jobId} did not report a handler (defaulting to unknown).`);
           }
           jobMeta.set(jobId, { handledBy: handler });
           lastHandledBy = handler;
-          updateStatus(`queued • served by ${handler}`, 0);
+          const queuedMessage =
+            handler && handler !== "unknown" ? `queued • served by ${handler}` : "queued";
+          updateStatus(queuedMessage, 0);
           pollTimer = window.setInterval(() => pollStatus(jobId), 1500);
         } catch (err) {
           updateStatus(err.message || "Failed to start generation.", null, true);
@@ -477,6 +490,7 @@
           }
 
           const payload = await res.json();
+          console.log("[Zeus] /api/jobs response:", jobId, payload);
           const { status, percent_complete: percent, handled_by: handledBy } = payload;
           if (handledBy) {
             console.log(`[Zeus] Poll job ${jobId}: handled by ${handledBy}`);
@@ -488,7 +502,8 @@
 
           if (status === "completed") {
             const handler = jobMeta.get(jobId)?.handledBy || lastHandledBy || "";
-            const statusMessage = handler && handler !== "unknown" ? `completed • served by ${handler}` : "completed";
+            const statusMessage =
+              handler && handler !== "unknown" ? `completed • served by ${handler}` : "completed";
             await loadVideo(jobId, { statusMessage });
             registerHistory(jobId, lastSubmittedPrompt, handler);
             clearPoll();
@@ -499,7 +514,9 @@
             setLoading(false);
           }
           if (status !== "completed") {
-            updateStatus(status, percent ?? null);
+            const statusMessage =
+              handledBy && handledBy !== "unknown" ? `${status} • served by ${handledBy}` : status;
+            updateStatus(statusMessage, percent ?? null);
           }
         } catch (err) {
           clearPoll();
@@ -617,8 +634,8 @@
         clearActiveVideo();
         setLoading(true);
         const entry = historyEntries.find((item) => item.jobId === jobId);
-        const handler = entry?.handledBy || "";
-        const statusMessage = handler ? `completed • served by ${handler}` : "completed";
+        const handledBy = resolveHandler(entry?.handledBy, entry?.servedBy);
+        const statusMessage = handledBy ? `completed • served by ${handledBy}` : "completed";
         loadVideo(jobId, {
           fromCache: true,
           statusMessage,
@@ -679,8 +696,9 @@
           if (timestamp) {
             details.push(timestamp);
           }
-          if (entry.handledBy && entry.handledBy !== "unknown") {
-            details.push(`Served by ${entry.handledBy}`);
+          const handler = resolveHandler(entry.handledBy, entry.servedBy);
+          if (handler && handler !== "unknown") {
+            details.push(`Served by ${handler}`);
           }
           if (details.length > 0) {
             const meta = document.createElement("div");
@@ -945,13 +963,8 @@
               prompt: entry.prompt,
               createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
             };
-            const handledBy =
-              typeof entry.handledBy === "string"
-                ? entry.handledBy
-                : typeof entry.handled_by === "string"
-                ? entry.handled_by
-                : undefined;
-            if (handledBy && handledBy !== "unknown") {
+            const handledBy = resolveHandler(entry.handledBy, entry.servedBy, entry.handled_by);
+            if (handledBy) {
               base.handledBy = handledBy;
             }
             return base;
