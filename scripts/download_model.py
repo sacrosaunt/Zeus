@@ -10,7 +10,6 @@ from pathlib import Path
 REPO_ID = "Lightricks/LTX-Video-0.9.8-13B-distilled"
 LOCAL_DIR = "models/ltx-video-0.9.8-13b-distilled"
 WEIGHTS: tuple[str, ...] | None = None
-INCLUDE_CONFIG = True
 
 
 def main() -> int:
@@ -21,20 +20,18 @@ def main() -> int:
 
     weights = tuple(filter(None, WEIGHTS or ()))
 
-    allow_patterns: list[str] | None = None
-    if INCLUDE_CONFIG:
-        allow_patterns = [
-            "model_index.json",
-            "scheduler/*",
-            "tokenizer/*",
-            "text_encoder/*",
-            "transformer/*",
-            "vae/*",
-            "*.txt",
-            "*.py",
-        ]
+    allow_patterns: list[str] = [
+        "model_index.json",
+        "scheduler/*",
+        "tokenizer/*",
+        "text_encoder/*",
+        "transformer/*",
+        "vae/*",
+        "*.txt",
+        "*.py",
+    ]
     if not weights:
-        allow_patterns = (allow_patterns or []) + ["*.safetensors"]
+        allow_patterns.append("*.safetensors")
 
     snapshot_kwargs = {
         "repo_id": REPO_ID,
