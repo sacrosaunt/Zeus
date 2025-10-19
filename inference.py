@@ -135,7 +135,8 @@ class LTXVideoRunner:
 
         raw_checkpoint = config["checkpoint_path"]
         checkpoint_name = Path(str(raw_checkpoint).strip()).name
-        checkpoint_path = self.model_root / checkpoint_name
+        checkpoint_path = (self.model_root / checkpoint_name).resolve()
+        LOGGER.info("Expecting checkpoint at %s", checkpoint_path)
         if not checkpoint_path.exists():
             LOGGER.info("Checkpoint %s missing; downloading from hub", checkpoint_name)
             downloaded = hf_hub_download(
