@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from importlib.resources import files as pkg_files
 from pathlib import Path
 from collections.abc import Callable
 
@@ -237,8 +238,12 @@ class LTXVideoRunner:
                 if files:
                     return str(files[0])
 
-        LOGGER.info("Pipeline config not found locally; using packaged default")
-        return "configs/ltxv-2b-0.9.6-distilled.yaml"
+        LOGGER.info("Pipeline config not found locally; installing packaged default")
+        packaged = pkg_files("ltx_video.configs").joinpath("ltxv-2b-0.9.6-distilled.yaml")
+        target = self.model_root / "configs" / "ltxv-2b-0.9.6-distilled.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(packaged.read_bytes())
+        return str(target)
 
     @staticmethod
     def _resolve_device(preference: str) -> str:
