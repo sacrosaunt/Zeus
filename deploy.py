@@ -33,6 +33,7 @@ def _unlink(path: Path) -> None:
 
 
 def mark_building() -> None:
+    """Reset flags and mark as 'building'."""
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
     _unlink(READY_FLAG)
     _unlink(LEGACY_READY_FLAG)
@@ -41,6 +42,7 @@ def mark_building() -> None:
 
 
 def mark_ready() -> None:
+    """Reset flags and mark as 'ready'."""
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
     _unlink(BUILDING_FLAG)
     _unlink(LEGACY_DOWNLOADING_FLAG)
@@ -50,10 +52,11 @@ def mark_ready() -> None:
 
 def start_core_services() -> None:
     """Start web tier services to accept traffic while the model syncs."""
-    run_command(["docker", "compose", "up", "--build", "-d", "redis", "app1", "app2", "caddy"])
+    run_command(["docker", "compose", "up", "--build", "-d", "redis", "app1", "app2", "app3", "caddy"])
 
 
 def start_inference_service() -> None:
+    """Start inference once models are ready."""
     run_command(["docker", "compose", "up", "--build", "-d", "inference"])
 
 

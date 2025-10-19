@@ -15,12 +15,12 @@ def create_app() -> Flask:
     redis_queue_key = os.environ.get("REDIS_QUEUE_KEY")
     redis_status_key = os.environ.get("REDIS_STATUS_KEY")
     generated_root_value = os.environ.get("GENERATED_ROOT")
-    server_ready_value = os.environ.get("SERVER_READY_FILE") or os.environ.get("MODEL_READY_FILE")
-    server_building_value = os.environ.get("SERVER_BUILDING_FILE") or os.environ.get("MODEL_DOWNLOADING_FILE")
+    server_ready_value = os.environ.get("SERVER_READY_FILE")
+    server_building_value = os.environ.get("SERVER_BUILDING_FILE")
 
     if not redis_url or not redis_queue_key or not redis_status_key or not generated_root_value:
         raise RuntimeError(
-            "REDIS_URL, REDIS_QUEUE_KEY, REDIS_STATUS_KEY, and GENERATED_ROOT must be set in .env"
+            "REDIS_URL, REDIS_QUEUE_KEY, REDIS_STATUS_KEY, and GENERATED_ROOT must be set."
         )
 
     redis_client = Redis.from_url(redis_url, decode_responses=True)
@@ -30,12 +30,14 @@ def create_app() -> Flask:
     app_instance = os.environ.get("APP_INSTANCE") or socket.gethostname()
     job_metadata_key = f"{redis_status_key}:metadata"
 
+    # normalize status strings to optional percent format.
     def _format_status(state: str, percent: int | None = None) -> str:
         if percent is None:
             return state
         bounded = max(0, min(100, percent))
         return f"{state}:{bounded}"
 
+    # gauge ready/building flags based on flags
     def _server_status() -> dict[str, object]:
         ready = True
         building = False
@@ -84,6 +86,7 @@ def create_app() -> Flask:
 
         job_id = str(uuid.uuid4())
         job_descriptor = {"job_id": job_id, "prompt": prompt, "handled_by": app_instance}
+        # enqueue job atomically to avoid partial writes
         with redis_client.pipeline() as pipe:
             pipe.hset(redis_status_key, job_id, _format_status("queued", 0))
             pipe.hset(job_metadata_key, job_id, app_instance)
@@ -111,6 +114,7 @@ def create_app() -> Flask:
 
         status = status_raw
         percent = None
+        # parse optional percent portion stored in redis.
         if ":" in status_raw:
             state, maybe_percent = status_raw.split(":", 1)
             status = state
@@ -132,7 +136,8 @@ def create_app() -> Flask:
     @app.get("/generated/<job_id>/out.mp4")
     def get_job_output(job_id: str):
         """Return generated video file."""
-        # prevent traversal
+
+        # prevent path traversal
         if any(sep in job_id for sep in ("/", "\\")):
             return jsonify({"error": "invalid_job_id"}), 400
 
