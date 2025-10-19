@@ -159,8 +159,18 @@ class LTXVideoRunner:
             enhance_prompt=False,
         )
         allowed_attr = getattr(self.pipeline, "allowed_inference_steps", None)
-        allowed_steps = list(allowed_attr) if allowed_attr else None
-        self._allowed_step_count = len(allowed_steps) if allowed_steps else None
+        self._allowed_steps: tuple[int, ...] | None = None
+        if allowed_attr is not None:
+            try:
+                candidate_values = list(allowed_attr)
+            except TypeError:
+                candidate_values = [allowed_attr]
+            try:
+                normalized_steps = sorted({int(value) for value in candidate_values})
+            except (TypeError, ValueError):
+                LOGGER.debug("Unexpected allowed inference steps descriptor: %s", allowed_attr)
+            else:
+                self._allowed_steps = tuple(normalized_steps)
 
     def generate(
         self,
@@ -177,13 +187,14 @@ class LTXVideoRunner:
         """Generate a video for the given prompt and persist it to disk."""
         requested_steps = num_inference_steps or self._default_steps
         steps = requested_steps
-        if self._allowed_step_count is not None and steps != self._allowed_step_count:
+        if self._allowed_steps and steps not in self._allowed_steps:
+            allowed_display = ", ".join(str(value) for value in self._allowed_steps)
             LOGGER.warning(
-                "Requested %s inference steps, but pipeline allows %s; using allowed value.",
+                "Requested %s inference steps, but pipeline reports supported values: %s. "
+                "Proceeding with requested value.",
                 steps,
-                self._allowed_step_count,
+                allowed_display,
             )
-            steps = self._allowed_step_count
         total_steps = max(1, steps)
         using_default_steps = steps == self._default_steps
         seed = int(time.time() * 1000) & 0xFFFFFFFF
