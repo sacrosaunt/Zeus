@@ -1,4 +1,5 @@
 # Zeus
+*This project was created in a weekend as part of a take-home assignment for a SWE job application.*
 
 Zeus provides a Docker-based deployment that serves a web UI for generating videos with the `ltxv-2b-0.9.6` weights (using the `ltxv-2b-0.9.6-dev` checkpoint) from the `Lightricks/LTX-Video` repository. The stack includes a Flask frontend behind Caddy, a Redis-backed job queue, and a GPU-powered inference worker that pulls prompts from the queue.
 
